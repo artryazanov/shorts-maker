@@ -9,8 +9,10 @@ import moviepy.video.fx.crop as crop_vid
 
 load_dotenv()
 
+short_length = 35
+
 # Ask for video info
-title = input("\nEnter the name of the video >  ")
+video_file_path = input("\nEnter video file path >  ")
 option = input('Do you want AI to generate content? (yes/no) >  ')
 
 if option == 'yes':
@@ -46,23 +48,25 @@ if not os.path.exists('generated'):
 speech = gTTS(text=content, lang='en', tld='ca', slow=False)
 speech.save("generated/speech.mp3")
 
-gp = random.choice(["1", "2"])
-start_point = random.randint(1, 480)
 audio_clip = AudioFileClip("generated/speech.mp3")
 
-if audio_clip.duration + 1.3 > 58:
+if audio_clip.duration + 1.3 > short_length:
     print('\nSpeech too long!\n' + str(audio_clip.duration) + ' seconds\n' + str(audio_clip.duration + 1.3) + ' total')
-    print('It will be cut to ' + str(58 - 1.3) + ' seconds\n')
-    audio_clip = audio_clip.subclip(0, 58 - 1.3)
+    print('It will be cut to ' + str(short_length - 1.3) + ' seconds\n')
+    audio_clip = audio_clip.subclip(0, short_length - 1.3)
     # exit()
 
 print('\n')
 
 ### VIDEO EDITING ###
 
-# Trim a random part of minecraft gameplay and slap audio on it
-video_clip = VideoFileClip("gameplay/gameplay_" + gp + ".mp4").subclip(start_point,
-                                                                       start_point + audio_clip.duration + 1.3)
+gp = random.choice(["1", "2"])
+video_clip = VideoFileClip(video_file_path)
+max_start_point = int(video_clip.duration - short_length - 1.3)
+start_point = random.randint(5, max_start_point)
+
+video_clip = video_clip.subclip(start_point, start_point + audio_clip.duration + 1.3)
+video_clip = video_clip.volumex(0.25)
 final_audio = CompositeAudioClip([video_clip.audio, audio_clip])
 
 final_clip = video_clip.set_audio(final_audio)
@@ -86,5 +90,5 @@ else:
     final_clip = crop_vid.crop(final_clip, width=w, height=new_height, x_center=x_center, y_center=y_center)
 
 # Write the final video
-final_clip.write_videofile("generated/" + title + ".mp4", codec='libx264', audio_codec='aac',
+final_clip.write_videofile("generated/" + os.path.basename(video_file_path) + ".mp4", codec='libx264', audio_codec='aac',
                            temp_audiofile='temp-audio.m4a', remove_temp=True)
