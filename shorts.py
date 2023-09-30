@@ -9,8 +9,8 @@ import moviepy.video.fx.crop as crop_vid
 
 load_dotenv()
 
-min_start_point = 15
-max_finish_point = 15
+min_start_point = 12
+max_finish_point = 12
 short_length = 36
 
 dir_list = os.listdir('gameplay')
@@ -22,12 +22,15 @@ for video_file in dir_list:
         os.mkdir('generated')
 
     video_clip = VideoFileClip(os.path.abspath('gameplay') + '/' + video_file)
+    if video_clip.duration < 60:
+        min_start_point = 0
+        max_finish_point = 0
+
     max_start_point = int(video_clip.duration - short_length - max_finish_point)
     start_point = random.randint(min_start_point, max_start_point)
-
     final_clip = video_clip.subclip(start_point, start_point + short_length)
 
-    # Resize the video to 9:16 ratio
+    # Resize the video
     w, h = final_clip.size
     current_ratio = w / h
     target_ratio = 1920 / 1920
@@ -46,5 +49,4 @@ for video_file in dir_list:
         final_clip = crop_vid.crop(final_clip, width=w, height=new_height, x_center=x_center, y_center=y_center)
 
     # Write the final video
-    final_clip.write_videofile("generated/" + os.path.basename(video_file), codec='libx264', audio_codec='aac',
-                               temp_audiofile='temp-audio.m4a', remove_temp=True)
+    final_clip.write_videofile("generated/" + os.path.basename(video_file), codec='libx264', audio_codec='aac')
