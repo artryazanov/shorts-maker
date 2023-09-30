@@ -23,7 +23,7 @@ if option == 'yes':
         engine="gpt-3.5-turbo-instruct",
         prompt=f"Generate content on - \"{theme}\"",
         temperature=0.7,
-        max_tokens=200,
+        max_tokens=768,
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0
@@ -52,7 +52,9 @@ audio_clip = AudioFileClip("generated/speech.mp3")
 
 if audio_clip.duration + 1.3 > 58:
     print('\nSpeech too long!\n' + str(audio_clip.duration) + ' seconds\n' + str(audio_clip.duration + 1.3) + ' total')
-    exit()
+    print('It will be cut to ' + str(58 - 1.3) + ' seconds\n')
+    audio_clip = audio_clip.subclip(0, 58 - 1.3)
+    # exit()
 
 print('\n')
 
@@ -61,7 +63,9 @@ print('\n')
 # Trim a random part of minecraft gameplay and slap audio on it
 video_clip = VideoFileClip("gameplay/gameplay_" + gp + ".mp4").subclip(start_point,
                                                                        start_point + audio_clip.duration + 1.3)
-final_clip = video_clip.set_audio(audio_clip)
+final_audio = CompositeAudioClip([video_clip.audio, audio_clip])
+
+final_clip = video_clip.set_audio(final_audio)
 
 # Resize the video to 9:16 ratio
 w, h = final_clip.size
