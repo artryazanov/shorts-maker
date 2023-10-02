@@ -68,6 +68,9 @@ def get_final_clip(clip, start_point, final_clip_length):
     w, h = result_clip.size
     if w / h > 3 / 4:
         background_clip = crop_clip(result_clip, 9 / 16)
+        w, h = background_clip.size
+        process_blur_width = min(1080, w)
+        background_clip = background_clip.resize(width=process_blur_width)
         background_clip = background_clip.fl_image(blur)
         w, h = result_clip.size
         background_clip = background_clip.resize(width=w)
