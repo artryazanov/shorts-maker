@@ -116,12 +116,11 @@ for video_file in dir_list:
             render_video(final_clip, render_file_name)
     else:
         if video_clip.duration < 60:
-            min_start_point = 0
-            max_finish_point = 0
+            short_length = min(math.floor(video_clip.duration), SHORT_LENGTH)
         else:
-            min_start_point = 12
-            max_finish_point = 12
+            short_length = SHORT_LENGTH
 
-        max_start_point = math.floor(video_clip.duration - SHORT_LENGTH - max_finish_point)
-        final_clip = get_final_clip(video_clip, random.randint(min_start_point, max_start_point), SHORT_LENGTH)
+        min_start_point = min(10, math.floor(video_clip.duration) - short_length)
+        max_start_point = math.floor(video_clip.duration - short_length)
+        final_clip = get_final_clip(video_clip, random.randint(min_start_point, max_start_point), short_length)
         render_video(final_clip, video_file)
