@@ -66,6 +66,10 @@ def get_final_clip(clip, start_point, final_clip_length):
         result_clip = crop_clip(result_clip, 4 / 3)
 
     w, h = result_clip.size
+    if w > 2160:
+        result_clip = result_clip.resize(width=2160)
+
+    w, h = result_clip.size
     if w / h > 3 / 4:
         background_clip = crop_clip(result_clip, 9 / 16)
         w, h = background_clip.size
