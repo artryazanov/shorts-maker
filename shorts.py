@@ -65,19 +65,34 @@ def get_final_clip(clip, start_point, final_clip_length):
         result_clip = crop_clip(result_clip, 4, 3)
 
     w, h = result_clip.size
-    if w > 2160:
-        result_clip = result_clip.resize(width=2160)
-
-    w, h = result_clip.size
     if w / h > 3 / 4:
+
+        if w < 840:
+            bg_w = 720
+            bg_h = 1280
+        elif w < 1020:
+            bg_w = 900
+            bg_h = 1600
+        elif w < 1320:
+            bg_w = 1080
+            bg_h = 1920
+        elif w < 1680:
+            bg_w = 1440
+            bg_h = 2560
+        elif w < 2040:
+            bg_w = 1800
+            bg_h = 3200
+        else:
+            bg_w = 2160
+            bg_h = 3840
+
+        result_clip = result_clip.resize(width=bg_w)
+
         background_clip = clip.subclip(start_point, start_point + final_clip_length)
         background_clip = crop_clip(background_clip, 9, 16)
-        w, h = background_clip.size
-        process_blur_width = min(1080, w)
-        background_clip = background_clip.resize(width=process_blur_width)
+        background_clip = background_clip.resize(width=720, height=1280)
         background_clip = background_clip.fl_image(blur)
-        w, h = result_clip.size
-        background_clip = background_clip.resize(width=w)
+        background_clip = background_clip.resize(width=bg_w, height=bg_h)
         result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
 
     return result_clip
