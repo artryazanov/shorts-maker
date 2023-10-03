@@ -16,12 +16,12 @@ import copy
 load_dotenv()
 
 
-def detect_video_scenes(video_path, threshold=27.0):
+def detect_video_scenes(video_path, adaptive_threshold=3.0):
     # Open our video, create a scene manager, and add a detector.
     video = open_video(video_path)
     scene_manager = SceneManager()
     scene_manager.add_detector(
-        ContentDetector(threshold=threshold))
+        AdaptiveDetector(adaptive_threshold=adaptive_threshold))
     scene_manager.detect_scenes(video, show_progress=True)
     return scene_manager.get_scene_list()
 
@@ -108,7 +108,7 @@ for video_file in dir_list:
     print('\r\nProcess: ' + video_file)
 
     print('Detecting scenes...')
-    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 64.0)
+    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 27.0)
 
     good_scene_list = []
     for i, scene in enumerate(scene_list):
