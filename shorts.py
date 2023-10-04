@@ -111,9 +111,10 @@ for video_file in dir_list:
     print('\r\nProcess: ' + video_file)
 
     print('Detecting scenes...')
-    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 8.0)
+    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 6.0)
 
-    combined_scene = None
+    combined_small_scene = None
+    combined_large_scene = None
     combined_scene_list = []
     for i, scene in enumerate(scene_list):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
@@ -125,23 +126,38 @@ for video_file in dir_list:
             scene[1].get_timecode(), scene[1].get_frames(),))
 
         if duration < min_short_length:
-            if combined_scene is None:
-                combined_scene = [scene[0], scene[1]]
+            if combined_small_scene is None:
+                combined_small_scene = [scene[0], scene[1]]
             else:
-                combined_scene[1] = scene[1]
-        else:
-            if combined_scene is not None:
-                combined_duration = combined_scene[1].get_seconds() - combined_scene[0].get_seconds()
+                combined_small_scene[1] = scene[1]
+
+            if combined_large_scene is not None:
+                combined_duration = combined_large_scene[1].get_seconds() - combined_large_scene[0].get_seconds()
                 if combined_duration >= min_short_length:
-                    combined_scene_list.append(combined_scene)
-                combined_scene = None
+                    combined_scene_list.append(combined_large_scene)
+                combined_large_scene = None
 
-            combined_scene_list.append(scene)
+        else:
+            if combined_large_scene is None:
+                combined_large_scene = [scene[0], scene[1]]
+            else:
+                combined_large_scene[1] = scene[1]
 
-    if combined_scene is not None:
-        combined_duration = combined_scene[1].get_seconds() - combined_scene[0].get_seconds()
+            if combined_small_scene is not None:
+                combined_duration = combined_small_scene[1].get_seconds() - combined_small_scene[0].get_seconds()
+                if combined_duration >= min_short_length:
+                    combined_scene_list.append(combined_small_scene)
+                combined_small_scene = None
+
+    if combined_small_scene is not None:
+        combined_duration = combined_small_scene[1].get_seconds() - combined_small_scene[0].get_seconds()
         if combined_duration >= min_short_length:
-            combined_scene_list.append(combined_scene)
+            combined_scene_list.append(combined_small_scene)
+
+    if combined_large_scene is not None:
+        combined_duration = combined_large_scene[1].get_seconds() - combined_large_scene[0].get_seconds()
+        if combined_duration >= min_short_length:
+            combined_scene_list.append(combined_large_scene)
 
     print('Combined scenes list:')
     for i, scene in enumerate(combined_scene_list):
