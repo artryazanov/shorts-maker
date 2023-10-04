@@ -98,6 +98,9 @@ def get_final_clip(clip, start_point, final_clip_length):
     return result_clip
 
 
+min_short_length = 25
+max_short_length = 55
+
 # Create the directory
 if not os.path.exists('generated'):
     os.mkdir('generated')
@@ -108,29 +111,52 @@ for video_file in dir_list:
     print('\r\nProcess: ' + video_file)
 
     print('Detecting scenes...')
-    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 27.0)
+    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 8.0)
 
-    good_scene_list = []
+    combined_scene = None
+    combined_scene_list = []
     for i, scene in enumerate(scene_list):
-        print('    Scene %2d: Start %s / Frame %d, End %s / Frame %d' % (
+        duration = scene[1].get_seconds() - scene[0].get_seconds()
+
+        print('    Scene %2d: Duration %d Start %s / Frame %d, End %s / Frame %d' % (
             i + 1,
+            duration,
             scene[0].get_timecode(), scene[0].get_frames(),
             scene[1].get_timecode(), scene[1].get_frames(),))
-        if (scene[1].get_seconds() - scene[0].get_seconds()) > 60:
-            good_scene_list.append(scene)
 
-    print('Good scenes list:')
-    for i, scene in enumerate(good_scene_list):
-        print('    Good Scene %2d: Start %s / Frame %d, End %s / Frame %d' % (
+        if duration < min_short_length:
+            if combined_scene is None:
+                combined_scene = [scene[0], scene[1]]
+            else:
+                combined_scene[1] = scene[1]
+        else:
+            if combined_scene is not None:
+                combined_duration = combined_scene[1].get_seconds() - combined_scene[0].get_seconds()
+                if combined_duration >= min_short_length:
+                    combined_scene_list.append(combined_scene)
+                combined_scene = None
+
+            combined_scene_list.append(scene)
+
+    if combined_scene is not None:
+        combined_duration = combined_scene[1].get_seconds() - combined_scene[0].get_seconds()
+        if combined_duration >= min_short_length:
+            combined_scene_list.append(combined_scene)
+
+    print('Combined scenes list:')
+    for i, scene in enumerate(combined_scene_list):
+        print('    Combined Scene %2d: Duration %d Start %s / Frame %d, End %s / Frame %d' % (
             i + 1,
+            scene[1].get_seconds() - scene[0].get_seconds(),
             scene[0].get_timecode(), scene[0].get_frames(),
             scene[1].get_timecode(), scene[1].get_frames(),))
 
     video_clip = VideoFileClip(os.path.abspath('gameplay') + '/' + video_file)
 
-    if len(good_scene_list) > 0:
-        for i, scene in enumerate(good_scene_list):
-            short_length = random.randint(25, 55)
+    if len(combined_scene_list) > 0:
+        for i, scene in enumerate(combined_scene_list):
+            duration = math.floor(scene[1].get_seconds() - scene[0].get_seconds())
+            short_length = random.randint(min_short_length, min(max_short_length, duration))
 
             min_start_point = math.floor(scene[0].get_seconds())
             max_start_point = math.floor((scene[1].get_seconds() - short_length))
@@ -141,9 +167,9 @@ for video_file in dir_list:
             render_file_name = split_tup[0] + ' scene-' + str(i) + split_tup[1]
             render_video(final_clip, render_file_name)
     else:
-        short_length = random.randint(25, 55)
+        short_length = random.randint(min_short_length, max_short_length)
 
-        if video_clip.duration < 60:
+        if video_clip.duration < max_short_length:
             adapted_short_length = min(math.floor(video_clip.duration), short_length)
         else:
             adapted_short_length = short_length
