@@ -111,7 +111,7 @@ for video_file in dir_list:
     print('\r\nProcess: ' + video_file)
 
     print('Detecting scenes...')
-    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file, 6.0)
+    scene_list = detect_video_scenes(os.path.abspath('gameplay') + '/' + video_file)
 
     combined_small_scene = None
     combined_large_scene = None
