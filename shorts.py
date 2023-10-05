@@ -16,12 +16,12 @@ import copy
 load_dotenv()
 
 
-def detect_video_scenes(video_path, adaptive_threshold=3.0):
+def detect_video_scenes(video_path, threshold=27.0):
     # Open our video, create a scene manager, and add a detector.
     video = open_video(video_path)
     scene_manager = SceneManager()
     scene_manager.add_detector(
-        AdaptiveDetector(adaptive_threshold=adaptive_threshold))
+        ContentDetector(threshold=threshold))
     scene_manager.detect_scenes(video, show_progress=True)
     return scene_manager.get_scene_list()
 
