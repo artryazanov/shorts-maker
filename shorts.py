@@ -125,6 +125,9 @@ for video_file in dir_list:
             scene[0].get_timecode(), scene[0].get_frames(),
             scene[1].get_timecode(), scene[1].get_frames(),))
 
+        if (len(scene_list) > 1) and ((i == 0) or (i == (len(scene_list) - 1))) and (duration < min_short_length):
+            continue
+
         if duration < min_short_length:
             if combined_small_scene is None:
                 combined_small_scene = [scene[0], scene[1]]
