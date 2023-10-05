@@ -174,17 +174,17 @@ for video_file in dir_list:
 
     video_clip = VideoFileClip(os.path.abspath('gameplay') + '/' + video_file)
 
-    if video_clip.duration < 1:
+    if video_clip.duration < 1 * 60:
         scene_limit = 1
-    elif video_clip.duration < 4:
+    elif video_clip.duration < 4 * 60:
         scene_limit = 2
-    elif video_clip.duration < 12:
+    elif video_clip.duration < 12 * 60:
         scene_limit = 3
-    elif video_clip.duration < 24:
+    elif video_clip.duration < 24 * 60:
         scene_limit = 4
-    elif video_clip.duration < 36:
+    elif video_clip.duration < 36 * 60:
         scene_limit = 5
-    elif video_clip.duration < 48:
+    elif video_clip.duration < 48 * 60:
         scene_limit = 6
     else:
         scene_limit = 8
