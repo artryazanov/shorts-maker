@@ -100,6 +100,7 @@ def get_final_clip(clip, start_point, final_clip_length):
 
 min_short_length = 15
 max_short_length = 60
+middle_short_length = (min_short_length + max_short_length) / 2
 
 # Create the directory
 if not os.path.exists('generated'):
@@ -136,7 +137,7 @@ for video_file in dir_list:
 
             if combined_large_scene is not None:
                 combined_duration = combined_large_scene[1].get_seconds() - combined_large_scene[0].get_seconds()
-                if combined_duration >= min_short_length:
+                if combined_duration >= middle_short_length:
                     combined_scene_list.append(combined_large_scene)
                 combined_large_scene = None
 
@@ -148,18 +149,18 @@ for video_file in dir_list:
 
             if combined_small_scene is not None:
                 combined_duration = combined_small_scene[1].get_seconds() - combined_small_scene[0].get_seconds()
-                if combined_duration >= min_short_length:
+                if combined_duration >= middle_short_length:
                     combined_scene_list.append(combined_small_scene)
                 combined_small_scene = None
 
     if combined_small_scene is not None:
         combined_duration = combined_small_scene[1].get_seconds() - combined_small_scene[0].get_seconds()
-        if combined_duration >= min_short_length:
+        if combined_duration >= middle_short_length:
             combined_scene_list.append(combined_small_scene)
 
     if combined_large_scene is not None:
         combined_duration = combined_large_scene[1].get_seconds() - combined_large_scene[0].get_seconds()
-        if combined_duration >= min_short_length:
+        if combined_duration >= middle_short_length:
             combined_scene_list.append(combined_large_scene)
 
     print('Combined scenes list:')
