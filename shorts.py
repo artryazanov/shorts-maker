@@ -98,8 +98,8 @@ def get_final_clip(clip, start_point, final_clip_length):
     return result_clip
 
 
-min_short_length = 25
-max_short_length = 55
+min_short_length = 15
+max_short_length = 60
 
 # Create the directory
 if not os.path.exists('generated'):
