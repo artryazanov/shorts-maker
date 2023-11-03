@@ -100,6 +100,7 @@ def get_final_clip(clip, start_point, final_clip_length):
 
 min_short_length = 15
 max_short_length = 60
+max_combined_scene_length = 300
 middle_short_length = (min_short_length + max_short_length) / 2
 
 # Create the directory
@@ -134,6 +135,10 @@ for video_file in dir_list:
                 combined_small_scene = [scene[0], scene[1]]
             else:
                 combined_small_scene[1] = scene[1]
+                combined_duration = combined_small_scene[1].get_seconds() - combined_small_scene[0].get_seconds()
+                if combined_duration >= max_combined_scene_length:
+                    combined_scene_list.append(combined_small_scene)
+                    combined_small_scene = None
 
             if combined_large_scene is not None:
                 combined_duration = combined_large_scene[1].get_seconds() - combined_large_scene[0].get_seconds()
