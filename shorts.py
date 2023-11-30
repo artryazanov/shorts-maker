@@ -99,7 +99,7 @@ def get_final_clip(clip, start_point, final_clip_length):
 
 
 min_short_length = 15
-max_short_length = 60
+max_short_length = 59
 max_combined_scene_length = 300
 middle_short_length = (min_short_length + max_short_length) / 2
 
