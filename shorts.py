@@ -1,19 +1,20 @@
 # Import everything
 from dotenv import load_dotenv
 import random
-import os
-import openai
-from gtts import gTTS
 from moviepy.editor import *
 import moviepy.video.fx.crop as crop_vid
-from scenedetect import open_video, SceneManager, split_video_ffmpeg
-from scenedetect.detectors import ContentDetector, ThresholdDetector, AdaptiveDetector
+from scenedetect import open_video, SceneManager
+from scenedetect.detectors import ContentDetector
 import math
-import skimage
 from scipy.ndimage import gaussian_filter
-import copy
 
 load_dotenv()
+
+my_target_ratio_w = 9  # default 4
+my_target_ratio_h = 16  # default 3
+my_scene_limit = 4  # default 12
+my_x_center = 0.25  # default 0.5
+my_y_center = 0.5  # default 0.5
 
 
 def detect_video_scenes(video_path, threshold=27.0):
@@ -40,14 +41,14 @@ def crop_clip(clip, target_ratio_w, target_ratio_h):
     if current_ratio > target_ratio:
         # The video is wider than the desired aspect ratio, crop the width
         new_width = round(h * target_ratio_w / target_ratio_h)
-        x_center = w / 2
-        y_center = h / 2
+        x_center = w * my_x_center
+        y_center = h * my_y_center
         cropped_clip = crop_vid.crop(clip, width=new_width, height=h, x_center=x_center, y_center=y_center)
     else:
         # The video is taller than the desired aspect ratio, crop the height
         new_height = round(w / target_ratio_w * target_ratio_h)
-        x_center = w / 2
-        y_center = h / 2
+        x_center = w * my_x_center
+        y_center = h * my_y_center
         cropped_clip = crop_vid.crop(clip, width=w, height=new_height, x_center=x_center, y_center=y_center)
 
     return cropped_clip
@@ -61,39 +62,37 @@ def get_final_clip(clip, start_point, final_clip_length):
     result_clip = clip.subclip(start_point, start_point + final_clip_length)
 
     w, h = result_clip.size
-    if w / h > 4 / 3:
-        result_clip = crop_clip(result_clip, 4, 3)
+    if w / h > my_target_ratio_w / my_target_ratio_h:
+        result_clip = crop_clip(result_clip, my_target_ratio_w, my_target_ratio_h)
 
     w, h = result_clip.size
-    if w / h > 3 / 4:
+    if w < 840:
+        bg_w = 720
+        bg_h = 1280
+    elif w < 1020:
+        bg_w = 900
+        bg_h = 1600
+    elif w < 1320:
+        bg_w = 1080
+        bg_h = 1920
+    elif w < 1680:
+        bg_w = 1440
+        bg_h = 2560
+    elif w < 2040:
+        bg_w = 1800
+        bg_h = 3200
+    else:
+        bg_w = 2160
+        bg_h = 3840
 
-        if w < 840:
-            bg_w = 720
-            bg_h = 1280
-        elif w < 1020:
-            bg_w = 900
-            bg_h = 1600
-        elif w < 1320:
-            bg_w = 1080
-            bg_h = 1920
-        elif w < 1680:
-            bg_w = 1440
-            bg_h = 2560
-        elif w < 2040:
-            bg_w = 1800
-            bg_h = 3200
-        else:
-            bg_w = 2160
-            bg_h = 3840
+    result_clip = result_clip.resize(width=bg_w)
 
-        result_clip = result_clip.resize(width=bg_w)
-
-        background_clip = clip.subclip(start_point, start_point + final_clip_length)
-        background_clip = crop_clip(background_clip, 9, 16)
-        background_clip = background_clip.resize(width=720, height=1280)
-        background_clip = background_clip.fl_image(blur)
-        background_clip = background_clip.resize(width=bg_w, height=bg_h)
-        result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
+    background_clip = clip.subclip(start_point, start_point + final_clip_length)
+    background_clip = crop_clip(background_clip, 9, 16)
+    background_clip = background_clip.resize(width=720, height=1280)
+    background_clip = background_clip.fl_image(blur)
+    background_clip = background_clip.resize(width=bg_w, height=bg_h)
+    result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
 
     return result_clip
 
@@ -180,7 +179,7 @@ for video_file in dir_list:
 
     video_clip = VideoFileClip(os.path.abspath('gameplay') + '/' + video_file)
 
-    scene_limit = 12
+    scene_limit = my_scene_limit
 
     truncated_sorted_combined_scene_list = sorted_combined_scene_list[:scene_limit]
 
