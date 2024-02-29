@@ -10,10 +10,10 @@ from scipy.ndimage import gaussian_filter
 
 load_dotenv()
 
-my_target_ratio_w = 9  # default 4
-my_target_ratio_h = 16  # default 3
+my_target_ratio_w = 4  # default 4
+my_target_ratio_h = 3  # default 3
 my_scene_limit = 4  # default 12
-my_x_center = 0.25  # default 0.5
+my_x_center = 0.5  # default 0.5
 my_y_center = 0.5  # default 0.5
 
 
@@ -55,7 +55,7 @@ def crop_clip(clip, target_ratio_w, target_ratio_h):
 
 
 def render_video(clip, video_file_name):
-    clip.write_videofile("generated/" + os.path.basename(video_file_name), codec='libx264', audio_codec='aac')
+    clip.write_videofile("generated/" + os.path.basename(video_file_name), codec='libx264', audio_codec='aac', fps=min(clip.fps, 60))
 
 
 def get_final_clip(clip, start_point, final_clip_length):

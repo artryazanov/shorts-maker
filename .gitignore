@@ -3,3 +3,4 @@ demo/
 gameplay/
 generated/
 .env
+*.mp4
