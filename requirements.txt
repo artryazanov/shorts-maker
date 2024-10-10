@@ -1,7 +1,7 @@
-gtts==2.2.3
+gtts==2.5.3
 moviepy==1.0.3
-opencv-python==4.9.0.80
-python-dotenv==1.0.0
+opencv-python==4.10.0.84
+python-dotenv==1.0.1
 random2==1.0.1
 scenedetect==0.6.2
 scipy==1.11.4

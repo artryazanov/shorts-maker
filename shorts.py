@@ -55,7 +55,11 @@ def crop_clip(clip, target_ratio_w, target_ratio_h):
 
 
 def render_video(clip, video_file_name):
-    clip.write_videofile("generated/" + os.path.basename(video_file_name), codec='libx264', audio_codec='aac', fps=min(clip.fps, 60))
+    try:
+        clip.write_videofile("generated/" + os.path.basename(video_file_name), codec='libx264', audio_codec='aac', fps=min(clip.fps, 60))
+    except:
+        print('\r\n\r\nAN EXCEPTION OCCURRED! TRY render_video AGAIN!\r\n\r\n')
+        render_video(clip, video_file_name)
 
 
 def get_final_clip(clip, start_point, final_clip_length):
