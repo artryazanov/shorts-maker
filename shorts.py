@@ -10,11 +10,12 @@ from scipy.ndimage import gaussian_filter
 
 load_dotenv()
 
-my_target_ratio_w = 4  # default 4
-my_target_ratio_h = 3  # default 3
+my_target_ratio_w = 9  # default 4
+my_target_ratio_h = 16  # default 3
 my_scene_limit = 4  # default 12
 my_x_center = 0.5  # default 0.5
 my_y_center = 0.5  # default 0.5
+my_max_error_depth = 3
 
 
 def detect_video_scenes(video_path, threshold=27.0):
@@ -54,12 +55,15 @@ def crop_clip(clip, target_ratio_w, target_ratio_h):
     return cropped_clip
 
 
-def render_video(clip, video_file_name):
+def render_video(clip, video_file_name, depth = 0):
     try:
         clip.write_videofile("generated/" + os.path.basename(video_file_name), codec='libx264', audio_codec='aac', fps=min(clip.fps, 60))
     except:
-        print('\r\n\r\nAN EXCEPTION OCCURRED! TRY render_video AGAIN!\r\n\r\n')
-        render_video(clip, video_file_name)
+        if depth < my_max_error_depth:
+            print('\r\n\r\nAN EXCEPTION OCCURRED! TRY render_video AGAIN!\r\n\r\n')
+            render_video(clip, video_file_name, depth + 1)
+        else:
+            print('\r\n\r\nAN EXCEPTION OCCURRED! TOO MUCH ERRORS! GO AHEAD!\r\n\r\n')
 
 
 def get_final_clip(clip, start_point, final_clip_length):
@@ -102,7 +106,7 @@ def get_final_clip(clip, start_point, final_clip_length):
 
 
 min_short_length = 15
-max_short_length = 59
+max_short_length = 179
 max_combined_scene_length = 300
 middle_short_length = (min_short_length + max_short_length) / 2
 
