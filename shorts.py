@@ -10,9 +10,9 @@ from scipy.ndimage import gaussian_filter
 
 load_dotenv()
 
-my_target_ratio_w = 9  # default 4
-my_target_ratio_h = 16  # default 3
-my_scene_limit = 4  # default 12
+my_target_ratio_w = 1  # default 4
+my_target_ratio_h = 1  # default 3
+my_scene_limit = 6  # default 12
 my_x_center = 0.5  # default 0.5
 my_y_center = 0.5  # default 0.5
 my_max_error_depth = 3
@@ -95,12 +95,20 @@ def get_final_clip(clip, start_point, final_clip_length):
 
     result_clip = result_clip.resize(width=bg_w)
 
-    background_clip = clip.subclip(start_point, start_point + final_clip_length)
-    background_clip = crop_clip(background_clip, 9, 16)
-    background_clip = background_clip.resize(width=720, height=1280)
-    background_clip = background_clip.fl_image(blur)
-    background_clip = background_clip.resize(width=bg_w, height=bg_h)
-    result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
+    if w >= h:
+        background_clip = clip.subclip(start_point, start_point + final_clip_length)
+        background_clip = crop_clip(background_clip, 1, 1)
+        background_clip = background_clip.resize(width=720, height=720)
+        background_clip = background_clip.fl_image(blur)
+        background_clip = background_clip.resize(width=bg_w, height=bg_w)
+        result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
+    elif w / 9 < h / 16:
+        background_clip = clip.subclip(start_point, start_point + final_clip_length)
+        background_clip = crop_clip(background_clip, 9, 16)
+        background_clip = background_clip.resize(width=720, height=1280)
+        background_clip = background_clip.fl_image(blur)
+        background_clip = background_clip.resize(width=bg_w, height=bg_h)
+        result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
 
     return result_clip
 
