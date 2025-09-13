@@ -5,3 +5,5 @@ python-dotenv==1.0.1
 random2==1.0.1
 scenedetect==0.6.2
 scipy==1.11.4
+numpy>=1.21
+pytest>=7.0
