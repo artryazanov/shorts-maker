@@ -50,6 +50,10 @@ Unit tests live in the `tests/` folder. Run them with:
 pytest -q
 ```
 
+## Acknowledgments
+
+Thank the Binary-Bytes for the original code and idea: https://github.com/Binary-Bytes/Auto-YouTube-Shorts-Maker
+
 ## License
 
 This project is released under the [Unlicense](LICENSE).
