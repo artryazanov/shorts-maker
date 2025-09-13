@@ -16,7 +16,6 @@ as ready‑to‑upload shorts.
 
 - Python 3.10+
 - FFmpeg (required by `moviepy`)
-- [Google Cloud Text‑to‑Speech](https://gtts.readthedocs.io/) for voiceover
 - See `requirements.txt` for Python dependencies
 
 ## Installation
@@ -54,9 +53,3 @@ pytest -q
 ## License
 
 This project is released under the [Unlicense](LICENSE).
-
-## Contributing
-
-Pull requests are welcome. Please ensure code is formatted and tests pass
-before submitting.
-
