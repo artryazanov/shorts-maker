@@ -42,6 +42,19 @@ installation instructions.
 Environment variables from a `.env` file will be loaded automatically if
 present.
 
+## Docker
+
+Build and run using Docker:
+
+```bash
+docker build -t shorts-maker .
+docker run --rm \
+    -v $(pwd)/gameplay:/app/gameplay \
+    -v $(pwd)/generated:/app/generated \
+    --env-file .env \
+    shorts-maker
+```
+
 ## Running Tests
 
 Unit tests live in the `tests/` folder. Run them with:
