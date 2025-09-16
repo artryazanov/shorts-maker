@@ -97,14 +97,6 @@ def test_render_video_retries(tmp_path):
     assert clip.write_videofile.call_count == 2
 
 
-def test_render_video_gpu_uses_nvenc(tmp_path):
-    clip = MagicMock()
-    clip.fps = 60
-    render_video(clip, Path("out.mp4"), tmp_path, use_gpu=True)
-
-    clip.write_videofile.assert_called_once()
-    kwargs = clip.write_videofile.call_args.kwargs
-    assert kwargs["codec"] == "h264_nvenc"
 
 
 def test_render_video_raises_after_retries(tmp_path):

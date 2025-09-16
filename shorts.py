@@ -49,7 +49,6 @@ class ProcessingConfig:
     min_short_length: int = 15
     max_short_length: int = 179
     max_combined_scene_length: int = 300
-    use_gpu: bool = False
 
     @property
     def middle_short_length(self) -> float:
@@ -130,9 +129,8 @@ def render_video(
     output_dir: Path,
     depth: int = 0,
     max_error_depth: int = 3,
-    use_gpu: bool = False,
 ) -> None:
-    """Render ``clip`` to ``output_dir`` with error retries.
+    """Render ``clip`` to ``output_dir``
 
     Parameters
     ----------
@@ -146,18 +144,12 @@ def render_video(
         Current retry depth used to limit recursion.
     max_error_depth:
         Maximum number of retries permitted before surfacing an error.
-    use_gpu:
-        Whether the rendering should leverage GPU encoding. When ``True`` the
-        NVENC encoder is used. Failures after the allowed number of retries are
-        re-raised so the caller can handle missing GPU support or other issues.
     """
-
-    codec = "h264_nvenc" if use_gpu else "libx264"
 
     try:
         clip.write_videofile(
             str(output_dir / video_file_name.name),
-            codec=codec,
+            codec="libx264",
             audio_codec="aac",
             fps=min(getattr(clip, "fps", 60), 60),
         )
@@ -170,7 +162,6 @@ def render_video(
                 output_dir,
                 depth + 1,
                 max_error_depth,
-                use_gpu=use_gpu,
             )
         else:
             logging.exception("Rendering failed after multiple attempts.")
@@ -372,7 +363,6 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
                 Path(render_file_name),
                 output_dir,
                 max_error_depth=config.max_error_depth,
-                use_gpu=config.use_gpu,
             )
     else:
         short_length = random.randint(
@@ -397,7 +387,6 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
             video_file,
             output_dir,
             max_error_depth=config.max_error_depth,
-            use_gpu=config.use_gpu,
         )
 
 
@@ -405,14 +394,6 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the shorts generator."""
 
     parser = argparse.ArgumentParser(description="Generate short clips from gameplay footage.")
-    parser.add_argument(
-        "--use-gpu",
-        action="store_true",
-        help=(
-            "Enable GPU accelerated rendering via the h264_nvenc codec. "
-            "Requires FFmpeg compiled with NVIDIA GPU support."
-        ),
-    )
     return parser.parse_args()
 
 
@@ -420,7 +401,7 @@ def main() -> None:
     """Entry point for command-line execution."""
 
     args = parse_args()
-    config = ProcessingConfig(use_gpu=args.use_gpu)
+    config = ProcessingConfig()
     output_dir = Path("generated")
     output_dir.mkdir(exist_ok=True)
 
