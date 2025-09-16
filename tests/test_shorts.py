@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -94,3 +95,22 @@ def test_render_video_retries(tmp_path):
     clip.write_videofile.side_effect = [Exception("boom"), None]
     render_video(clip, Path("out.mp4"), tmp_path, max_error_depth=1)
     assert clip.write_videofile.call_count == 2
+
+
+def test_render_video_gpu_uses_nvenc(tmp_path):
+    clip = MagicMock()
+    clip.fps = 60
+    render_video(clip, Path("out.mp4"), tmp_path, use_gpu=True)
+
+    clip.write_videofile.assert_called_once()
+    kwargs = clip.write_videofile.call_args.kwargs
+    assert kwargs["codec"] == "h264_nvenc"
+
+
+def test_render_video_raises_after_retries(tmp_path):
+    clip = MagicMock()
+    clip.fps = 60
+    clip.write_videofile.side_effect = Exception("fail")
+
+    with pytest.raises(Exception):
+        render_video(clip, Path("out.mp4"), tmp_path, max_error_depth=0)
