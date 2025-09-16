@@ -39,6 +39,11 @@ installation instructions.
 
 3. Generated clips are written to the `generated/` directory.
 
+Pass the optional `--use-gpu` flag to enable rendering via FFmpeg's
+`h264_nvenc` encoder. This requires an NVIDIA GPU and an FFmpeg build with
+NVENC support. The script will raise an error if GPU encoding is requested but
+not available.
+
 Environment variables from a `.env` file will be loaded automatically if
 present.
 
