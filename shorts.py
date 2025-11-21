@@ -27,6 +27,7 @@ import moviepy.video.fx.crop as crop_vid
 from scipy.ndimage import gaussian_filter
 from scenedetect import SceneManager, open_video
 from scenedetect.detectors import ContentDetector
+import librosa
 
 
 # Load environment variables from a .env file if present.
@@ -109,8 +110,94 @@ def detect_video_scenes(video_path: Path, threshold: float = 27.0) -> Sequence[T
 
 def blur(image: np.ndarray) -> np.ndarray:
     """Return a blurred version of ``image``."""
-
     return gaussian_filter(image.astype(float), sigma=8)
+
+
+# --- Audio-based action scoring -------------------------------------------------
+
+def compute_audio_action_profile(
+    video_path: Path,
+    frame_length: int = 2048,
+    hop_length: int = 512,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute audio-based "action score" over the entire video.
+
+    Returns:
+      times  - array of times (seconds) for each feature frame
+      score  - combined action score (loudness + spectral "roughness")
+    """
+
+    # librosa can read audio directly from mp4
+    y, sr = librosa.load(str(video_path), sr=None, mono=True)
+
+    # RMS (loudness)
+    rms = librosa.feature.rms(
+        y=y,
+        frame_length=frame_length,
+        hop_length=hop_length,
+    )[0]  # shape: (n_frames,)
+
+    # Spectral flux (how much the spectrum changes from frame to frame)
+    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
+    spectral_flux = np.sqrt(((np.diff(S, axis=1) ** 2).sum(axis=0)))
+    spectral_flux = np.concatenate([[0.0], spectral_flux])  # align length
+
+    def smooth(x: np.ndarray, win: int = 15) -> np.ndarray:
+        # Ensure smoothing window does not exceed the signal length to avoid
+        # np.convolve(..., mode="same") expanding the output when win > len(x).
+        n = max(1, min(int(win), int(len(x))))
+        if n == 1:
+            return x
+        kernel = np.ones(n, dtype=float) / float(n)
+        return np.convolve(x, kernel, mode="same")
+
+    # Normalization
+    rms_norm = (rms - rms.mean()) / (rms.std() + 1e-8)
+    flux_norm = (spectral_flux - spectral_flux.mean()) / (spectral_flux.std() + 1e-8)
+
+    # Smoothing to remove jitter
+    rms_smooth = smooth(rms_norm, win=21)
+    flux_smooth = smooth(flux_norm, win=21)
+
+    # Final score: tweak weights if needed
+    score = 0.6 * rms_smooth + 0.4 * flux_smooth
+
+    # Time for each feature frame
+    times = librosa.frames_to_time(
+        np.arange(len(score)),
+        sr=sr,
+        hop_length=hop_length,
+    )
+
+    return times, score
+
+
+def scene_action_score(
+    scene: Tuple,
+    times: np.ndarray,
+    score: np.ndarray,
+) -> float:
+    """Return the average action score within the scene.
+
+    This is essentially the "total action per unit time": the higher the
+    average score, the more intense the scene.
+    """
+
+    start_sec = scene[0].get_seconds()
+    end_sec = scene[1].get_seconds()
+
+    if end_sec <= start_sec:
+        return 0.0
+
+    # Take those audio-profile frames that fall inside the scene
+    mask = (times >= start_sec) & (times < end_sec)
+    if not np.any(mask):
+        return 0.0
+
+    segment_scores = score[mask]
+
+    # Mean value = integral(score)/duration (dt is constant)
+    return float(segment_scores.mean())
 
 
 def crop_clip(
@@ -330,27 +417,53 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     """Process a single video file and generate short clips."""
 
     logging.info("\nProcess: %s", video_file.name)
+
     logging.info("Detecting scenes...")
     scene_list = detect_video_scenes(video_file)
 
+    logging.info("Computing audio action profile...")
+    audio_times, audio_score = compute_audio_action_profile(video_file)
+
     combined_scene_list = combine_scenes(scene_list, config)
-    logging.info("Combined scenes list:")
+
+    logging.info("Combined scenes list with action scores:")
     for i, scene in enumerate(combined_scene_list, start=1):
+        duration = scene[1].get_seconds() - scene[0].get_seconds()
+        score_val = scene_action_score(scene, audio_times, audio_score)
         logging.info(
-            "    Combined Scene %2d: Duration %d Start %s / Frame %d, End %s / Frame %d",
+            "    Combined Scene %2d: Duration %5.1f s, ActionScore %7.3f,"
+            " Start %s / Frame %d, End %s / Frame %d",
             i,
-            scene[1].get_seconds() - scene[0].get_seconds(),
+            duration,
+            score_val,
             scene[0].get_timecode(),
             scene[0].get_frames(),
             scene[1].get_timecode(),
             scene[1].get_frames(),
         )
 
+    # Sort by action score, not by length
     sorted_combined_scene_list = sorted(
         combined_scene_list,
-        key=lambda s: s[1].get_seconds() - s[0].get_seconds(),
+        key=lambda s: scene_action_score(s, audio_times, audio_score),
         reverse=True,
     )
+
+    logging.info("Sorted combined scenes list (by action score):")
+    for i, scene in enumerate(sorted_combined_scene_list, start=1):
+        duration = scene[1].get_seconds() - scene[0].get_seconds()
+        score_val = scene_action_score(scene, audio_times, audio_score)
+        logging.info(
+            "    Scene %2d: ActionScore %7.3f, Duration %5.1f s,"
+            " Start %s / Frame %d, End %s / Frame %d",
+            i,
+            score_val,
+            duration,
+            scene[0].get_timecode(),
+            scene[0].get_frames(),
+            scene[1].get_timecode(),
+            scene[1].get_frames(),
+        )
 
     video_clip = VideoFileClip(str(video_file))
     truncated_list = sorted_combined_scene_list[: config.scene_limit]

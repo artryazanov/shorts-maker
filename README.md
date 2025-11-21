@@ -1,12 +1,14 @@
 # Shorts Maker
 
 Shorts Maker generates vertical video clips from longer gameplay footage. The
-script detects scenes, crops them to the desired aspect ratio and renders them
-as ready‑to‑upload shorts.
+script detects scenes, computes an audio-based action profile to rank scenes by
+intensity, crops to the desired aspect ratio, and renders ready‑to‑upload shorts.
 
 ## Features
 
 - Automatic scene detection using `scenedetect`
+- Audio-based action scoring with `librosa` (RMS loudness + spectral flux)
+- Scenes ranked by action score ("how loud/chaotic") rather than duration
 - Smart cropping with optional blurred background for non‑vertical footage
 - Retry logic during rendering to avoid spurious failures
 - Configuration via `.env` environment variables (safe defaults via `ProcessingConfig`)
@@ -16,7 +18,7 @@ as ready‑to‑upload shorts.
 
 - Python 3.10+
 - FFmpeg (required by `moviepy`)
-- See `requirements.txt` for Python dependencies
+- See `requirements.txt` for Python dependencies (includes `librosa` and `soundfile`)
 
 ## Installation
 
@@ -43,9 +45,25 @@ python shorts.py
 
 3. Generated clips are written to the `generated/` directory.
 
+During processing, the log shows an action score for each combined scene and the
+final list sorted by that score. The top scenes (by action intensity) are
+rendered first, up to `SCENE_LIMIT` per source video.
 
 Environment variables from a `.env` file will be loaded automatically if
 present.
+
+## How it works
+
+- Detect scenes with `scenedetect` and merge adjacent short scenes to reach a
+  reasonable duration.
+- Compute an audio action profile with `librosa` directly from the video file:
+  - RMS loudness and spectral flux are normalized and smoothed.
+  - A combined score (0.6·RMS + 0.4·flux) is calculated per audio frame.
+- For each scene, compute the average of this score over the scene
+  (`scene_action_score`).
+- Sort scenes by this average score (descending) and pick the top ones.
+- Crop to the target aspect ratio; if needed, compose over a blurred background.
+- Render clips with retry logic for resilience.
 
 ### Configuration
 
@@ -97,6 +115,10 @@ Unit tests live in the `tests/` folder. Run them with:
 ```bash
 pytest -q
 ```
+
+## Troubleshooting
+
+- FFmpeg not found: install FFmpeg and ensure it is on your PATH.
 
 ## Acknowledgments
 

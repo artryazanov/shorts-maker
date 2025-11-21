@@ -21,6 +21,7 @@ detectors_stub.ContentDetector = object  # type: ignore
 sys.modules.setdefault("scenedetect", scenedetect_stub)
 sys.modules.setdefault("scenedetect.detectors", detectors_stub)
 
+import shorts
 from shorts import (
     blur,
     combine_scenes,
@@ -28,6 +29,8 @@ from shorts import (
     select_background_resolution,
     ProcessingConfig,
     render_video,
+    scene_action_score,
+    compute_audio_action_profile,
 )
 
 
@@ -106,3 +109,64 @@ def test_render_video_raises_after_retries(tmp_path):
 
     with pytest.raises(Exception):
         render_video(clip, Path("out.mp4"), tmp_path, max_error_depth=0)
+
+
+
+def test_scene_action_score_average():
+    times = np.array([0, 1, 2, 3, 4, 5, 6], dtype=float)
+    score = np.array([0, 10, 10, 10, 0, 0, 0], dtype=float)
+    scene = make_scene(1.0, 4.0)
+    avg = scene_action_score(scene, times, score)
+    assert avg == pytest.approx(10.0, rel=1e-6)
+
+
+def test_scene_action_score_empty_segment():
+    times = np.array([0.0, 1.0], dtype=float)
+    score = np.array([1.0, 1.0], dtype=float)
+    scene = make_scene(2.0, 3.0)
+    assert scene_action_score(scene, times, score) == 0.0
+
+
+def test_scene_action_score_invalid_range():
+    times = np.array([0.0], dtype=float)
+    score = np.array([0.0], dtype=float)
+    scene = make_scene(5.0, 5.0)
+    assert scene_action_score(scene, times, score) == 0.0
+
+
+def test_compute_audio_action_profile_stubbed(monkeypatch):
+    class LibrosaStub:
+        def load(self, path, sr=None, mono=True):
+            return np.zeros(1000, dtype=float), 100
+
+        class feature:
+            @staticmethod
+            def rms(y, frame_length=2048, hop_length=512):
+                # Return shape (1, n_frames)
+                return np.array([[1.0, 2.0, 3.0]], dtype=float)
+
+        @staticmethod
+        def stft(y, n_fft=2048, hop_length=512):
+            # Shape (freq_bins, n_frames)
+            return np.array(
+                [
+                    [1.0, 2.0, 3.0],
+                    [1.0, 2.0, 3.0],
+                ],
+                dtype=float,
+            )
+
+        @staticmethod
+        def frames_to_time(frames, sr=100, hop_length=512):
+            return np.asarray(frames, dtype=float) * 0.01
+
+    # Patch the librosa module used inside shorts
+    monkeypatch.setattr(shorts, "librosa", LibrosaStub(), raising=False)
+
+    times, score = compute_audio_action_profile(Path("dummy.mp4"))
+
+    assert isinstance(times, np.ndarray)
+    assert isinstance(score, np.ndarray)
+    assert len(times) == len(score) == 3
+    # Combined score should not be constant given our stub inputs
+    assert score.std() > 0
