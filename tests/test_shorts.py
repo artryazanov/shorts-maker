@@ -30,6 +30,7 @@ from shorts import (
     ProcessingConfig,
     render_video,
     scene_action_score,
+    best_action_window_start,
     compute_audio_action_profile,
 )
 
@@ -170,3 +171,45 @@ def test_compute_audio_action_profile_stubbed(monkeypatch):
     assert len(times) == len(score) == 3
     # Combined score should not be constant given our stub inputs
     assert score.std() > 0
+
+
+
+def test_best_action_window_start_picks_max_window():
+    # times every 1s from 0..19
+    times = np.arange(0.0, 20.0, 1.0, dtype=float)
+    score = np.zeros_like(times)
+    # Low action at 2..4
+    score[2:5] = 1.0
+    # High action at 8..10 — the best 3s window should start at 8
+    score[8:11] = 2.0
+
+    scene = make_scene(0.0, 15.0)
+    start = best_action_window_start(scene, 3.0, times, score)
+    assert start == pytest.approx(8.0, rel=1e-9)
+
+
+def test_best_action_window_start_clamps_to_fit():
+    # Increasing scores push the best window to the end, but it must clamp to fit
+    times = np.arange(0.0, 6.0, 1.0, dtype=float)
+    score = np.arange(len(times), dtype=float)  # 0,1,2,3,4,5
+
+    scene = make_scene(0.0, 5.0)
+    # Window 4s can only start in [0, 1]; the raw best start would be 2 -> clamp to 1
+    start = best_action_window_start(scene, 4.0, times, score)
+    assert start == pytest.approx(1.0, rel=1e-9)
+
+
+def test_best_action_window_start_fallback_no_frames():
+    times = np.arange(100.0, 110.0, 1.0, dtype=float)
+    score = np.ones_like(times)
+    scene = make_scene(0.0, 5.0)
+    start = best_action_window_start(scene, 3.0, times, score)
+    assert start == pytest.approx(0.0, rel=1e-9)
+
+
+def test_best_action_window_start_short_scene():
+    times = np.arange(0.0, 50.0, 1.0, dtype=float)
+    score = np.ones_like(times)
+    scene = make_scene(10.0, 12.0)  # duration 2s
+    start = best_action_window_start(scene, 5.0, times, score)
+    assert start == pytest.approx(10.0, rel=1e-9)

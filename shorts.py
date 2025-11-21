@@ -200,6 +200,68 @@ def scene_action_score(
     return float(segment_scores.mean())
 
 
+def best_action_window_start(
+    scene: Tuple,
+    window_length: float,
+    times: np.ndarray,
+    score: np.ndarray,
+) -> float:
+    """Pick the start time inside ``scene`` where the audio action score
+    summed over ``window_length`` seconds is maximal.
+
+    If there is not enough information to compute a reliable window (e.g.,
+    no audio frames inside the scene), fall back to the scene start.
+    """
+
+    start_sec = float(scene[0].get_seconds())
+    end_sec = float(scene[1].get_seconds())
+
+    # Safety clamp if durations are degenerate
+    if not math.isfinite(start_sec) or not math.isfinite(end_sec) or end_sec <= start_sec:
+        return start_sec
+
+    # We only consider windows that fully fit into the scene
+    max_allowed_start = end_sec - float(window_length)
+    if max_allowed_start <= start_sec:
+        # Window must start exactly at scene start (scene ~= window length)
+        return max(start_sec, min(start_sec, end_sec - float(window_length)))
+
+    # Identify audio feature frames within the scene
+    mask = (times >= start_sec) & (times <= end_sec)
+    if not np.any(mask):
+        return start_sec
+
+    t_seg = times[mask]
+    s_seg = score[mask]
+
+    if len(t_seg) < 2:
+        # Only a single frame inside the scene; start at scene start
+        return start_sec
+
+    # Estimate frame step (should be constant for librosa frames)
+    dt = float(np.median(np.diff(t_seg)))
+    if not math.isfinite(dt) or dt <= 0:
+        return start_sec
+
+    # Convert window length in seconds to frames
+    n_win = int(max(1, round(float(window_length) / dt)))
+
+    if len(s_seg) < n_win:
+        # Not enough frames sampled inside the scene; start at scene start
+        return start_sec
+
+    # Moving sum over the window using cumulative sum for efficiency
+    csum = np.cumsum(np.concatenate(([0.0], s_seg)))
+    window_sums = csum[n_win:] - csum[:-n_win]  # shape: (len(s_seg) - n_win + 1,)
+    best_idx = int(np.argmax(window_sums))
+
+    # Map best index back to absolute time and clamp inside [start, end - window]
+    best_start_time = float(t_seg[best_idx])
+    best_start_time = max(start_sec, min(best_start_time, max_allowed_start))
+
+    return best_start_time
+
+
 def crop_clip(
     clip: VideoFileClip,
     ratio_w: int,
@@ -541,12 +603,24 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
                 config.min_short_length, min(config.max_short_length, duration)
             )
 
-            min_start = math.floor(scene[0].get_seconds())
-            max_start = math.floor(scene[1].get_seconds() - short_length)
+            # Pick the start time that maximizes the cumulative audio action
+            # within the chosen short_length window for this scene.
+            best_start = best_action_window_start(
+                scene,
+                float(short_length),
+                audio_times,
+                audio_score,
+            )
+            logging.info(
+                "Selected start %.2f for scene %d with window %ds",
+                best_start,
+                i,
+                short_length,
+            )
 
             final_clip = get_final_clip(
                 video_clip,
-                random.randint(min_start, max_start),
+                best_start,
                 short_length,
                 config,
             )
