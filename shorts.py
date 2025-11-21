@@ -15,6 +15,7 @@ import argparse
 import logging
 import math
 import random
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence, Tuple
@@ -34,6 +35,32 @@ load_dotenv()
 # Configure basic logging. The calling application may override this
 # configuration if a different format is required.
 logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
+def _get_env_int(name: str, default: int) -> int:
+    """Read an int environment variable with a default and basic validation."""
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except Exception:
+        logging.warning("Env var %s=%r is not a valid int. Using default %s.", name, value, default)
+        return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    """Read a float environment variable with a default and basic validation."""
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return float(value)
+    except Exception:
+        logging.warning(
+            "Env var %s=%r is not a valid float. Using default %s.", name, value, default
+        )
+        return default
 
 
 @dataclass(frozen=True)
@@ -397,11 +424,39 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def config_from_env() -> ProcessingConfig:
+    """Build ProcessingConfig from environment variables with sane defaults.
+
+    Environment variables:
+      - TARGET_RATIO_W (int)
+      - TARGET_RATIO_H (int)
+      - SCENE_LIMIT (int)
+      - X_CENTER (float)
+      - Y_CENTER (float)
+      - MAX_ERROR_DEPTH (int)
+      - MIN_SHORT_LENGTH (int)
+      - MAX_SHORT_LENGTH (int)
+      - MAX_COMBINED_SCENE_LENGTH (int)
+    """
+
+    return ProcessingConfig(
+        target_ratio_w=_get_env_int("TARGET_RATIO_W", 1),
+        target_ratio_h=_get_env_int("TARGET_RATIO_H", 1),
+        scene_limit=_get_env_int("SCENE_LIMIT", 6),
+        x_center=_get_env_float("X_CENTER", 0.5),
+        y_center=_get_env_float("Y_CENTER", 0.5),
+        max_error_depth=_get_env_int("MAX_ERROR_DEPTH", 3),
+        min_short_length=_get_env_int("MIN_SHORT_LENGTH", 15),
+        max_short_length=_get_env_int("MAX_SHORT_LENGTH", 179),
+        max_combined_scene_length=_get_env_int("MAX_COMBINED_SCENE_LENGTH", 300),
+    )
+
+
 def main() -> None:
     """Entry point for command-line execution."""
 
     args = parse_args()
-    config = ProcessingConfig()
+    config = config_from_env()
     output_dir = Path("generated")
     output_dir.mkdir(exist_ok=True)
 
