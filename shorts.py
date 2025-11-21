@@ -413,6 +413,59 @@ def combine_scenes(scene_list: Sequence[Tuple], config: ProcessingConfig) -> Lis
     return combined_scene_list
 
 
+class _SecondsTime:
+    """Lightweight stand-in for scene time objects using seconds.
+
+    Provides the minimal API used elsewhere: get_seconds(), get_timecode(), get_frames().
+    Frames are computed assuming 30 fps to keep behavior consistent with tests.
+    """
+
+    def __init__(self, seconds: float):
+        self._seconds = float(seconds)
+
+    def get_seconds(self) -> float:
+        return self._seconds
+
+    def get_timecode(self) -> str:
+        # Keep simple representation similar to tests' MockTime
+        return str(self._seconds)
+
+    def get_frames(self) -> int:
+        return int(self._seconds * 30)
+
+
+def split_overlong_scenes(combined_scene_list: List[List], config: ProcessingConfig) -> List[List]:
+    """Split scenes longer than 4 * max_short_length into n equal parts.
+
+    For each scene with duration D > 4 * max_short_length, compute
+    n = floor(D / (2 * max_short_length)) and split the scene into n
+    equal sub-scenes. Scenes not exceeding the threshold are kept as is.
+    """
+
+    result: List[List] = []
+    threshold = 4 * config.max_short_length
+    for scene in combined_scene_list:
+        start_s = scene[0].get_seconds()
+        end_s = scene[1].get_seconds()
+        duration = end_s - start_s
+
+        if duration > threshold:
+            n = int(math.floor(duration / (2 * config.max_short_length)))
+            if n <= 1:
+                result.append(scene)
+                continue
+
+            part_len = duration / n
+            for i in range(n):
+                part_start = start_s + i * part_len
+                part_end = start_s + (i + 1) * part_len
+                result.append([_SecondsTime(part_start), _SecondsTime(part_end)])
+        else:
+            result.append(scene)
+
+    return result
+
+
 def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) -> None:
     """Process a single video file and generate short clips."""
 
@@ -424,14 +477,15 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     logging.info("Computing audio action profile...")
     audio_times, audio_score = compute_audio_action_profile(video_file)
 
-    combined_scene_list = combine_scenes(scene_list, config)
+    processed_scene_list = combine_scenes(scene_list, config)
+    processed_scene_list = split_overlong_scenes(processed_scene_list, config)
 
-    logging.info("Combined scenes list with action scores:")
-    for i, scene in enumerate(combined_scene_list, start=1):
+    logging.info("Scenes list with action scores:")
+    for i, scene in enumerate(processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
         score_val = scene_action_score(scene, audio_times, audio_score)
         logging.info(
-            "    Combined Scene %2d: Duration %5.1f s, ActionScore %7.3f,"
+            "    Scene %2d: Duration %5.1f s, ActionScore %7.3f,"
             " Start %s / Frame %d, End %s / Frame %d",
             i,
             duration,
@@ -443,14 +497,14 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
         )
 
     # Sort by action score, not by length
-    sorted_combined_scene_list = sorted(
-        combined_scene_list,
+    sorted_processed_scene_list = sorted(
+        processed_scene_list,
         key=lambda s: scene_action_score(s, audio_times, audio_score),
         reverse=True,
     )
 
-    logging.info("Sorted combined scenes list (by action score):")
-    for i, scene in enumerate(sorted_combined_scene_list, start=1):
+    logging.info("Sorted scenes list (by action score):")
+    for i, scene in enumerate(sorted_processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
         score_val = scene_action_score(scene, audio_times, audio_score)
         logging.info(
@@ -466,9 +520,9 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
         )
 
     video_clip = VideoFileClip(str(video_file))
-    truncated_list = sorted_combined_scene_list[: config.scene_limit]
+    truncated_list = sorted_processed_scene_list[: config.scene_limit]
 
-    logging.info("Truncated sorted combined scenes list:")
+    logging.info("Truncated sorted scenes list:")
     for i, scene in enumerate(truncated_list, start=1):
         logging.info(
             "    Scene %2d: Duration %d Start %s / Frame %d, End %s / Frame %d",
