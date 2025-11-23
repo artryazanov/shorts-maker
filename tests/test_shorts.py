@@ -113,12 +113,12 @@ def test_render_video_raises_after_retries(tmp_path):
 
 
 
-def test_scene_action_score_average():
+def test_scene_action_score_sum():
     times = np.array([0, 1, 2, 3, 4, 5, 6], dtype=float)
     score = np.array([0, 10, 10, 10, 0, 0, 0], dtype=float)
     scene = make_scene(1.0, 4.0)
-    avg = scene_action_score(scene, times, score)
-    assert avg == pytest.approx(10.0, rel=1e-6)
+    total = scene_action_score(scene, times, score)
+    assert total == pytest.approx(30.0, rel=1e-6)
 
 
 def test_scene_action_score_empty_segment():
@@ -213,3 +213,43 @@ def test_best_action_window_start_short_scene():
     scene = make_scene(10.0, 12.0)  # duration 2s
     start = best_action_window_start(scene, 5.0, times, score)
     assert start == pytest.approx(10.0, rel=1e-9)
+
+
+
+def test_combine_scenes_merges_interior_short_run():
+    # Interior run of short scenes (< min_short_length) should be merged with neighbours,
+    # not dropped. Boundary runs use middle_short_length threshold.
+    config = ProcessingConfig(min_short_length=5, max_short_length=10, max_combined_scene_length=300)
+    scenes = [
+        make_scene(0, 8),   # long boundary run (>= middle_short_length -> kept)
+        make_scene(8, 9),   # short
+        make_scene(9, 10),  # short (interior run total = 2 < min -> merge)
+        make_scene(10, 20), # long
+    ]
+
+    combined = combine_scenes(scenes, config)
+    assert len(combined) == 2
+    (s1, e1), (s2, e2) = combined
+    assert s1.get_seconds() == 0 and e1.get_seconds() == 8
+    # The interior short run should be merged into the next long run
+    assert s2.get_seconds() == 8 and e2.get_seconds() == 20
+
+
+def test_combine_scenes_splits_long_small_run_by_cap():
+    # A long sequence of short scenes must be split by max_combined_scene_length, and
+    # the split occurs on the previous scene boundary to avoid overlap.
+    config = ProcessingConfig(min_short_length=5, max_short_length=10, max_combined_scene_length=10)
+
+    # 20 consecutive 1-second scenes (all "short") from 0..20
+    scenes = [make_scene(t, t + 1) for t in range(0, 20)]
+
+    combined = combine_scenes(scenes, config)
+
+    # Expect two chunks: the first is flushed when the accumulated duration reaches the cap,
+    # closing at the previous boundary (end at 10), then the remainder up to the last full
+    # boundary before exceeding the cap (ends at 19). The final 1s tail is dropped as a
+    # boundary shorter than middle_short_length.
+    assert len(combined) == 2
+    (s1, e1), (s2, e2) = combined
+    assert s1.get_seconds() == 0 and e1.get_seconds() == 10
+    assert s2.get_seconds() == 10 and e2.get_seconds() == 19

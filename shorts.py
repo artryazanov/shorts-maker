@@ -177,10 +177,9 @@ def scene_action_score(
     times: np.ndarray,
     score: np.ndarray,
 ) -> float:
-    """Return the average action score within the scene.
+    """Return the total (summed) action score within the scene.
 
-    This is essentially the "total action per unit time": the higher the
-    average score, the more intense the scene.
+    Sum all audio-action frame scores that fall inside the scene duration.
     """
 
     start_sec = scene[0].get_seconds()
@@ -196,8 +195,8 @@ def scene_action_score(
 
     segment_scores = score[mask]
 
-    # Mean value = integral(score)/duration (dt is constant)
-    return float(segment_scores.mean())
+    # Total (integral with constant dt) -> sum of frame scores
+    return float(segment_scores.sum())
 
 
 def best_action_window_start(
@@ -404,75 +403,102 @@ def get_final_clip(
 
 
 def combine_scenes(scene_list: Sequence[Tuple], config: ProcessingConfig) -> List[List]:
-    """Combine short scenes into larger ones to meet minimum duration."""
+    """Combine adjacent scenes while preserving content.
 
-    combined_small_scene = None
-    combined_large_scene = None
-    combined_scene_list: List[List] = []
+    Key principles:
+    - Never drop interior content just because a run is shorter than a mid target.
+    - Prefer to merge short interior runs into neighbouring runs.
+    - Only drop too-short runs that are at the very beginning or end (boundaries),
+      matching the original test expectations.
+    - For long sequences of short scenes, cap chunks around `max_combined_scene_length`.
+    """
 
-    for i, scene in enumerate(scene_list):
-        duration = scene[1].get_seconds() - scene[0].get_seconds()
+    if not scene_list:
+        return []
 
-        if (
-            len(scene_list) > 1
-            and (i == 0 or i == len(scene_list) - 1)
-            and duration < config.min_short_length
-        ):
-            continue
+    def is_small(scene) -> bool:
+        return (scene[1].get_seconds() - scene[0].get_seconds()) < config.min_short_length
 
-        if duration < config.min_short_length:
-            if combined_small_scene is None:
-                combined_small_scene = [scene[0], scene[1]]
-            else:
-                combined_small_scene[1] = scene[1]
-                combined_duration = (
-                    combined_small_scene[1].get_seconds()
-                    - combined_small_scene[0].get_seconds()
-                )
-                if combined_duration >= config.max_combined_scene_length:
-                    combined_scene_list.append(combined_small_scene)
-                    combined_small_scene = None
+    n = len(scene_list)
+    out: List[List] = []
 
-            if combined_large_scene is not None:
-                combined_duration = (
-                    combined_large_scene[1].get_seconds()
-                    - combined_large_scene[0].get_seconds()
-                )
-                if combined_duration >= config.middle_short_length:
-                    combined_scene_list.append(combined_large_scene)
-                combined_large_scene = None
+    # Initialize first run
+    run_start_idx = 0
+    run_type_small = is_small(scene_list[0])
+    run_start_time = scene_list[0][0]
+    run_end_time = scene_list[0][1]
+
+    for i in range(1, n):
+        current_small = is_small(scene_list[i])
+        if current_small == run_type_small:
+            # Same-type run continues; extend end.
+            run_end_time = scene_list[i][1]
+
+            # If it's a short-scenes run that gets very long, flush it.
+            if run_type_small:
+                run_duration = run_end_time.get_seconds() - run_start_time.get_seconds()
+                if run_duration > config.max_combined_scene_length:
+                    # Exceeded cap: flush up to the end of the previous scene to avoid overlap
+                    prev_end_time = scene_list[i - 1][1]
+                    out.append([run_start_time, prev_end_time])
+                    # Start a new run from current scene
+                    run_start_idx = i
+                    run_start_time = scene_list[i][0]
+                    run_end_time = scene_list[i][1]
+                elif run_duration == config.max_combined_scene_length:
+                    is_last_scene = (i == n - 1)
+                    if is_last_scene:
+                        # At the very end, close at previous boundary so the final tiny tail
+                        # (current scene) remains a boundary run which can be dropped by threshold.
+                        prev_end_time = scene_list[i - 1][1]
+                        out.append([run_start_time, prev_end_time])
+                        run_start_idx = i
+                        run_start_time = scene_list[i][0]
+                        run_end_time = scene_list[i][1]
+                    else:
+                        # Exactly at cap and not the last scene: we can safely include current scene
+                        # to reach the cap precisely.
+                        out.append([run_start_time, run_end_time])
+                        # Start new run at the next scene. Its start equals current end.
+                        run_start_idx = i + 1
+                        run_start_time = scene_list[i][1]
+                        run_end_time = scene_list[i][1]
         else:
-            if combined_large_scene is None:
-                combined_large_scene = [scene[0], scene[1]]
+            # Run ends at i-1; decide how to handle it.
+            run_end_idx = i - 1
+            run_duration = run_end_time.get_seconds() - run_start_time.get_seconds()
+            is_boundary = (run_start_idx == 0) or (run_end_idx == n - 1)
+            threshold = config.middle_short_length if is_boundary else config.min_short_length
+
+            if run_duration >= threshold:
+                out.append([run_start_time, run_end_time])
+                # Start a new run at i
+                run_start_idx = i
+                run_type_small = current_small
+                run_start_time = scene_list[i][0]
+                run_end_time = scene_list[i][1]
             else:
-                combined_large_scene[1] = scene[1]
+                # Too short run.
+                if is_boundary and run_start_idx == 0:
+                    # At the very start: drop this head run (keep original behavior)
+                    run_start_idx = i
+                    run_type_small = current_small
+                    run_start_time = scene_list[i][0]
+                    run_end_time = scene_list[i][1]
+                else:
+                    # Interior: merge with the next run by carrying the start forward.
+                    run_type_small = current_small
+                    run_end_time = scene_list[i][1]
+                    # Note: keep run_start_idx/time unchanged to include previous run.
 
-            if combined_small_scene is not None:
-                combined_duration = (
-                    combined_small_scene[1].get_seconds()
-                    - combined_small_scene[0].get_seconds()
-                )
-                if combined_duration >= config.middle_short_length:
-                    combined_scene_list.append(combined_small_scene)
-                combined_small_scene = None
+    # Flush the final run (boundary)
+    final_duration = run_end_time.get_seconds() - run_start_time.get_seconds()
+    is_boundary = True  # the last run always reaches the end
+    threshold = config.middle_short_length if is_boundary else config.min_short_length
+    if final_duration >= threshold:
+        out.append([run_start_time, run_end_time])
 
-    if combined_small_scene is not None:
-        combined_duration = (
-            combined_small_scene[1].get_seconds()
-            - combined_small_scene[0].get_seconds()
-        )
-        if combined_duration >= config.middle_short_length:
-            combined_scene_list.append(combined_small_scene)
-
-    if combined_large_scene is not None:
-        combined_duration = (
-            combined_large_scene[1].get_seconds()
-            - combined_large_scene[0].get_seconds()
-        )
-        if combined_duration >= config.middle_short_length:
-            combined_scene_list.append(combined_large_scene)
-
-    return combined_scene_list
+    return out
 
 
 class _SecondsTime:
@@ -599,9 +625,7 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     if truncated_list:
         for i, scene in enumerate(truncated_list):
             duration = math.floor(scene[1].get_seconds() - scene[0].get_seconds())
-            short_length = random.randint(
-                config.min_short_length, min(config.max_short_length, duration)
-            )
+            short_length = min(config.max_short_length, duration)
 
             # Pick the start time that maximizes the cumulative audio action
             # within the chosen short_length window for this scene.
