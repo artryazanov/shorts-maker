@@ -172,14 +172,108 @@ def compute_audio_action_profile(
     return times, score
 
 
+
+def compute_video_action_profile(
+    video_path: Path,
+    fps: int = 6,
+    downscale_factor: int = 4,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute a fast video-based "action score" over the entire video.
+
+    Optimizations:
+      - Read frames sequentially via iter_frames(...) at a low analysis fps.
+      - Downscale frames by taking every N-th pixel along each axis to reduce cost.
+      - Compute mean absolute difference in grayscale luma between consecutive frames.
+      - Normalize and smooth similarly to the audio profile.
+
+    Returns:
+      times  - array of timestamps (seconds) for each sample
+      score  - normalized video action score (higher means more motion)
+    """
+
+    clip = VideoFileClip(str(video_path))
+    duration = float(clip.duration)
+
+    if duration <= 0:
+        clip.close()
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    # Do not analyze faster than the source fps.
+    orig_fps = clip.fps or fps
+    eff_fps = min(float(fps), float(orig_fps))
+    if eff_fps <= 0:
+        eff_fps = max(1.0, float(fps))
+
+    motions: List[float] = []
+    times: List[float] = []
+
+    prev_gray: np.ndarray | None = None
+
+    # Sequential frame reading is much cheaper than random access get_frame(t)
+    # Compatibility with different MoviePy versions: 'progress_bar' arg may not exist.
+    try:
+        frame_iter = clip.iter_frames(fps=eff_fps, dtype="uint8", progress_bar=False)
+    except TypeError:
+        frame_iter = clip.iter_frames(fps=eff_fps, dtype="uint8")
+
+    for idx, frame in enumerate(frame_iter):
+        t = idx / eff_fps
+        if t > duration:
+            break
+
+        # Convert to grayscale [0, 1]
+        gray = np.dot(frame[..., :3], [0.299, 0.587, 0.114]).astype(np.float32) / 255.0
+
+        # Downscale: simple striding is sufficient to estimate motion.
+        if downscale_factor > 1:
+            gray = gray[::downscale_factor, ::downscale_factor]
+
+        if prev_gray is None:
+            motions.append(0.0)
+        else:
+            diff = np.mean(np.abs(gray - prev_gray))
+            motions.append(float(diff))
+
+        prev_gray = gray
+        times.append(t)
+
+    clip.close()
+
+    if not motions:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    motions = np.asarray(motions, dtype=float)
+    times_arr = np.asarray(times, dtype=float)
+
+    # Normalization (z-score)
+    motions_norm = (motions - motions.mean()) / (motions.std() + 1e-8)
+
+    def smooth(x: np.ndarray, win: int = 15) -> np.ndarray:
+        n = max(1, min(int(win), int(len(x))))
+        if n == 1:
+            return x
+        kernel = np.ones(n, dtype=float) / float(n)
+        return np.convolve(x, kernel, mode="same")
+
+    # Smooth over roughly ~1 second (window ≈ eff_fps samples)
+    score = smooth(motions_norm, win=int(eff_fps))
+
+    return times_arr, score
+
+
 def scene_action_score(
     scene: Tuple,
-    times: np.ndarray,
-    score: np.ndarray,
+    audio_times: np.ndarray,
+    audio_score: np.ndarray,
+    video_times: np.ndarray | None = None,
+    video_score: np.ndarray | None = None,
+    w_audio: float = 0.6,
+    w_video: float = 0.4,
 ) -> float:
-    """Return the total (summed) action score within the scene.
+    """Return total (summed) action score within the scene.
 
-    Sum all audio-action frame scores that fall inside the scene duration.
+    Now accounts for both audio and video:
+      total = w_audio * audio_action + w_video * video_action
     """
 
     start_sec = scene[0].get_seconds()
@@ -188,44 +282,51 @@ def scene_action_score(
     if end_sec <= start_sec:
         return 0.0
 
-    # Take those audio-profile frames that fall inside the scene
-    mask = (times >= start_sec) & (times < end_sec)
-    if not np.any(mask):
-        return 0.0
+    def _segment_sum(times: np.ndarray, score: np.ndarray) -> float:
+        if times.size == 0 or score.size == 0:
+            return 0.0
+        mask = (times >= start_sec) & (times < end_sec)
+        if not np.any(mask):
+            return 0.0
+        return float(score[mask].sum())
 
-    segment_scores = score[mask]
+    audio_val = _segment_sum(audio_times, audio_score)
 
-    # Total (integral with constant dt) -> sum of frame scores
-    return float(segment_scores.sum())
+    if video_times is None or video_score is None:
+        # If video profile wasn't computed
+        return audio_val
+
+    video_val = _segment_sum(video_times, video_score)
+
+    return w_audio * audio_val + w_video * video_val
 
 
-def best_action_window_start(
+def _best_window_single(
     scene: Tuple,
     window_length: float,
     times: np.ndarray,
     score: np.ndarray,
 ) -> float:
-    """Pick the start time inside ``scene`` where the audio action score
-    summed over ``window_length`` seconds is maximal.
+    """Audio OR video variant of best_action_window_start for a single profile.
 
-    If there is not enough information to compute a reliable window (e.g.,
-    no audio frames inside the scene), fall back to the scene start.
+    Returns the best start time within the scene that maximizes the sum of
+    `score` over a sliding window of length `window_length` using the
+    timestamps `times`. Falls back to the scene start in degenerate cases.
     """
 
     start_sec = float(scene[0].get_seconds())
     end_sec = float(scene[1].get_seconds())
 
-    # Safety clamp if durations are degenerate
+    # Safety clamp
     if not math.isfinite(start_sec) or not math.isfinite(end_sec) or end_sec <= start_sec:
         return start_sec
 
-    # We only consider windows that fully fit into the scene
     max_allowed_start = end_sec - float(window_length)
     if max_allowed_start <= start_sec:
-        # Window must start exactly at scene start (scene ~= window length)
+        # Window almost equals scene length — start at scene start
         return max(start_sec, min(start_sec, end_sec - float(window_length)))
 
-    # Identify audio feature frames within the scene
+    # Keep only samples inside the scene
     mask = (times >= start_sec) & (times <= end_sec)
     if not np.any(mask):
         return start_sec
@@ -234,28 +335,102 @@ def best_action_window_start(
     s_seg = score[mask]
 
     if len(t_seg) < 2:
-        # Only a single frame inside the scene; start at scene start
         return start_sec
 
-    # Estimate frame step (should be constant for librosa frames)
     dt = float(np.median(np.diff(t_seg)))
     if not math.isfinite(dt) or dt <= 0:
         return start_sec
 
-    # Convert window length in seconds to frames
+    # Window length in samples
     n_win = int(max(1, round(float(window_length) / dt)))
-
     if len(s_seg) < n_win:
-        # Not enough frames sampled inside the scene; start at scene start
         return start_sec
 
-    # Moving sum over the window using cumulative sum for efficiency
+    # Fast moving sum via cumulative sum
     csum = np.cumsum(np.concatenate(([0.0], s_seg)))
-    window_sums = csum[n_win:] - csum[:-n_win]  # shape: (len(s_seg) - n_win + 1,)
+    window_sums = csum[n_win:] - csum[:-n_win]
     best_idx = int(np.argmax(window_sums))
 
-    # Map best index back to absolute time and clamp inside [start, end - window]
     best_start_time = float(t_seg[best_idx])
+    best_start_time = max(start_sec, min(best_start_time, max_allowed_start))
+
+    return best_start_time
+
+
+def best_action_window_start(
+    scene: Tuple,
+    window_length: float,
+    audio_times: np.ndarray,
+    audio_score: np.ndarray,
+    video_times: np.ndarray | None = None,
+    video_score: np.ndarray | None = None,
+    w_audio: float = 0.6,
+    w_video: float = 0.4,
+) -> float:
+    """Find the start of the window inside the scene maximizing combined action.
+
+    - If both audio and video are present → combine on the audio grid:
+        combined = w_audio * audio + w_video * video_interp
+      (video_interp is the video score interpolated to `audio_times`).
+    - If video is missing/invalid → fallback to audio-only behavior.
+    - If audio is not suitable but video exists → fallback to video-only.
+    """
+
+    # If video is missing or empty, use audio-only profile as before
+    if (
+        video_times is None
+        or video_score is None
+        or len(video_times) == 0
+        or len(video_score) == 0
+    ):
+        return _best_window_single(scene, window_length, audio_times, audio_score)
+
+    start_sec = float(scene[0].get_seconds())
+    end_sec = float(scene[1].get_seconds())
+
+    if not math.isfinite(start_sec) or not math.isfinite(end_sec) or end_sec <= start_sec:
+        return start_sec
+
+    # Use audio samples inside the scene as the base grid
+    a_mask = (audio_times >= start_sec) & (audio_times <= end_sec)
+    if not np.any(a_mask):
+        # If audio has no samples but video exists → try video-only
+        return _best_window_single(scene, window_length, video_times, video_score)
+
+    t_a_seg = audio_times[a_mask]
+    s_a_seg = audio_score[a_mask]
+
+    if len(t_a_seg) < 2:
+        # Too few audio samples → try video-only
+        return _best_window_single(scene, window_length, video_times, video_score)
+
+    # Interpolate video to audio timestamps
+    if len(video_times) > 1:
+        order = np.argsort(video_times)
+        v_interp = np.interp(t_a_seg, video_times[order], video_score[order])
+    else:
+        v_interp = np.full_like(t_a_seg, float(video_score[0]), dtype=float)
+
+    combined_seg = w_audio * s_a_seg + w_video * v_interp
+
+    # Proceed like in _best_window_single but on (t_a_seg, combined_seg)
+    dt = float(np.median(np.diff(t_a_seg)))
+    if not math.isfinite(dt) or dt <= 0:
+        return _best_window_single(scene, window_length, audio_times, audio_score)
+
+    max_allowed_start = end_sec - float(window_length)
+    if max_allowed_start <= start_sec:
+        return max(start_sec, min(start_sec, end_sec - float(window_length)))
+
+    n_win = int(max(1, round(float(window_length) / dt)))
+    if len(combined_seg) < n_win:
+        return _best_window_single(scene, window_length, audio_times, audio_score)
+
+    csum = np.cumsum(np.concatenate(([0.0], combined_seg)))
+    window_sums = csum[n_win:] - csum[:-n_win]
+    best_idx = int(np.argmax(window_sums))
+
+    best_start_time = float(t_a_seg[best_idx])
     best_start_time = max(start_sec, min(best_start_time, max_allowed_start))
 
     return best_start_time
@@ -565,13 +740,20 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     logging.info("Computing audio action profile...")
     audio_times, audio_score = compute_audio_action_profile(video_file)
 
+    logging.info("Computing video action profile...")
+    video_times, video_score = compute_video_action_profile(
+        video_file,
+        fps=4,                # lower analysis fps for speed (3–6 is a good range)
+        downscale_factor=6,   # strong spatial downscale (4–8) for faster motion estimation
+    )
+
     processed_scene_list = combine_scenes(scene_list, config)
     processed_scene_list = split_overlong_scenes(processed_scene_list, config)
 
     logging.info("Scenes list with action scores:")
     for i, scene in enumerate(processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
-        score_val = scene_action_score(scene, audio_times, audio_score)
+        score_val = scene_action_score(scene, audio_times, audio_score, video_times, video_score)
         logging.info(
             "    Scene %2d: Duration %5.1f s, ActionScore %7.3f,"
             " Start %s / Frame %d, End %s / Frame %d",
@@ -587,14 +769,14 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     # Sort by action score, not by length
     sorted_processed_scene_list = sorted(
         processed_scene_list,
-        key=lambda s: scene_action_score(s, audio_times, audio_score),
+        key=lambda s: scene_action_score(s, audio_times, audio_score, video_times, video_score),
         reverse=True,
     )
 
     logging.info("Sorted scenes list (by action score):")
     for i, scene in enumerate(sorted_processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
-        score_val = scene_action_score(scene, audio_times, audio_score)
+        score_val = scene_action_score(scene, audio_times, audio_score, video_times, video_score)
         logging.info(
             "    Scene %2d: ActionScore %7.3f, Duration %5.1f s,"
             " Start %s / Frame %d, End %s / Frame %d",
@@ -625,7 +807,9 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     if truncated_list:
         for i, scene in enumerate(truncated_list):
             duration = math.floor(scene[1].get_seconds() - scene[0].get_seconds())
-            short_length = min(config.max_short_length, duration)
+            short_length = random.randint(
+                config.min_short_length, min(config.max_short_length, duration)
+            )
 
             # Pick the start time that maximizes the cumulative audio action
             # within the chosen short_length window for this scene.
@@ -634,6 +818,8 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
                 float(short_length),
                 audio_times,
                 audio_score,
+                video_times,
+                video_score,
             )
             logging.info(
                 "Selected start %.2f for scene %d with window %ds",

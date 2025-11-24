@@ -1,14 +1,17 @@
 # Shorts Maker
 
 Shorts Maker generates vertical video clips from longer gameplay footage. The
-script detects scenes, computes an audio-based action profile to rank scenes by
-intensity, crops to the desired aspect ratio, and renders ready‑to‑upload shorts.
+script detects scenes, computes audio and video action profiles (sound intensity + visual motion) and combines them to rank scenes by
+overall intensity, crops to the desired aspect ratio, and renders ready‑to‑upload shorts.
 
 ## Features
 
 - Automatic scene detection using `scenedetect`
-- Audio-based action scoring with `librosa` (RMS loudness + spectral flux)
-- Scenes ranked by action score ("how loud/chaotic") rather than duration
+- Audio + video action scoring:
+  - Audio with `librosa` (RMS loudness + spectral flux)
+  - Video motion via per-frame luma differences
+  - Combined ranking with tunable weights (defaults: audio 0.6, video 0.4)
+- Scenes ranked by combined action score (audio + video) rather than duration
 - Smart cropping with optional blurred background for non‑vertical footage
 - Retry logic during rendering to avoid spurious failures
 - Configuration via `.env` environment variables (safe defaults via `ProcessingConfig`)
@@ -18,7 +21,7 @@ intensity, crops to the desired aspect ratio, and renders ready‑to‑upload sh
 
 - Python 3.10+
 - FFmpeg (required by `moviepy`)
-- See `requirements.txt` for Python dependencies (includes `librosa` and `soundfile`)
+- See `requirements.txt` for Python dependencies (includes `librosa`, `soundfile`, `moviepy`, `scenedetect`, `scipy`)
 
 ## Installation
 
@@ -56,12 +59,12 @@ present.
 
 - Detect scenes with `scenedetect` and merge adjacent short scenes to reach a
   reasonable duration.
-- Compute an audio action profile with `librosa` directly from the video file:
-  - RMS loudness and spectral flux are normalized and smoothed.
-  - A combined score (0.6·RMS + 0.4·flux) is calculated per audio frame.
-- For each scene, compute the average of this score over the scene
-  (`scene_action_score`).
-- Sort scenes by this average score (descending) and pick the top ones.
+- Compute action profiles directly from the video file:
+  - Audio profile with `librosa`: RMS loudness and spectral flux are normalized and smoothed; a per-frame score is computed as `0.6 * RMS + 0.4 * flux`.
+  - Video profile with `moviepy`: frames are sampled at a fixed FPS, motion is estimated via mean absolute difference of grayscale luma between consecutive frames, then z-normalized and smoothed.
+- For each scene, compute a combined action score (audio + video) and use it for logging and sorting (`scene_action_score`).
+- When extracting a short from a scene, find the best start time via a sliding window over the combined profile (`best_action_window_start`).
+- Sort scenes by the combined score (descending) and pick the top ones.
 - Crop to the target aspect ratio; if needed, compose over a blurred background.
 - Render clips with retry logic for resilience.
 

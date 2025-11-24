@@ -32,6 +32,7 @@ from shorts import (
     scene_action_score,
     best_action_window_start,
     compute_audio_action_profile,
+    compute_video_action_profile,
 )
 
 
@@ -253,3 +254,114 @@ def test_combine_scenes_splits_long_small_run_by_cap():
     (s1, e1), (s2, e2) = combined
     assert s1.get_seconds() == 0 and e1.get_seconds() == 10
     assert s2.get_seconds() == 10 and e2.get_seconds() == 19
+
+
+
+def test_compute_video_action_profile_stubbed_basic(monkeypatch):
+    # Stub VideoFileClip.iter_frames to avoid real decoding
+    class VideoStub:
+        def __init__(self, *_args, **_kwargs):
+            self.duration = 4.0
+            self.fps = 30  # source fps
+        def iter_frames(self, fps=2.0, dtype="uint8", progress_bar=False):
+            # Yield exactly int(duration*fps) frames
+            n = int(self.duration * fps)
+            for i in range(n):
+                # Toggle brightness every frame to induce motion
+                val = 255 if (i % 2) else 0
+                yield np.full((4, 4, 3), val, dtype=np.uint8)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(shorts, "VideoFileClip", VideoStub, raising=False)
+
+    # Use a low fps so the array is small and deterministic
+    times, score = compute_video_action_profile(Path("dummy.mp4"), fps=2)
+
+    assert isinstance(times, np.ndarray)
+    assert isinstance(score, np.ndarray)
+    # duration 4s at 2 fps -> 8 samples
+    assert len(times) == int(4.0 * 2) and len(score) == int(4.0 * 2)
+    # Score should have some variance due to alternating diffs
+    assert score.std() > 0
+
+
+def test_compute_video_action_profile_zero_duration(monkeypatch):
+    class ZeroDurStub:
+        def __init__(self, *_args, **_kwargs):
+            self.duration = 0.0
+        def get_frame(self, t: float):  # pragma: no cover - should not be called
+            raise AssertionError("get_frame should not be called for zero duration")
+        def close(self):
+            pass
+
+    monkeypatch.setattr(shorts, "VideoFileClip", ZeroDurStub, raising=False)
+
+    times, score = compute_video_action_profile(Path("dummy.mp4"), fps=5)
+    assert times.size == 0 and score.size == 0
+
+
+def test_scene_action_score_combines_audio_video():
+    # Simple 0..4s with unit audio everywhere and a video spike at t=2
+    audio_times = np.array([0.0, 1.0, 2.0, 3.0], dtype=float)
+    audio_score = np.ones_like(audio_times)
+    video_times = np.array([0.0, 1.0, 2.0, 3.0], dtype=float)
+    video_score = np.array([0.0, 0.0, 1.0, 0.0], dtype=float)
+
+    scene = make_scene(0.0, 4.0)
+    total = scene_action_score(
+        scene,
+        audio_times,
+        audio_score,
+        video_times,
+        video_score,
+        w_audio=0.6,
+        w_video=0.4,
+    )
+    # audio sum = 4, video sum = 1 -> total = 0.6*4 + 0.4*1 = 2.8
+    assert total == pytest.approx(2.8, rel=1e-9)
+
+
+def test_best_action_window_start_prefers_video_when_weighted():
+    # Audio has zero action; video has a 2s high-action segment at ~6..8
+    audio_times = np.arange(0.0, 10.0, 1.0, dtype=float)
+    audio_score = np.zeros_like(audio_times)
+
+    video_times = np.arange(0.0, 10.0, 0.5, dtype=float)
+    video_score = np.zeros_like(video_times)
+    # Make 6.0 <= t < 8.0 high action
+    video_score[(video_times >= 6.0) & (video_times < 8.0)] = 10.0
+
+    scene = make_scene(0.0, 10.0)
+    start = best_action_window_start(
+        scene,
+        2.0,
+        audio_times,
+        audio_score,
+        video_times,
+        video_score,
+        w_audio=0.0,
+        w_video=1.0,
+    )
+    assert start == pytest.approx(6.0, rel=1e-6)
+
+
+def test_best_action_window_start_fallback_video_only():
+    # Audio has no samples inside scene; video exists and should be used
+    audio_times = np.array([100.0, 101.0], dtype=float)
+    audio_score = np.array([1.0, 1.0], dtype=float)
+
+    video_times = np.arange(0.0, 6.0, 1.0, dtype=float)
+    video_score = np.zeros_like(video_times)
+    video_score[2:5] = 2.0  # best 2s window should start at 2.0
+
+    scene = make_scene(0.0, 5.0)
+    start = best_action_window_start(
+        scene,
+        2.0,
+        audio_times,
+        audio_score,
+        video_times,
+        video_score,
+    )
+    assert start == pytest.approx(2.0, rel=1e-9)
