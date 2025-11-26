@@ -22,8 +22,7 @@ from typing import List, Sequence, Tuple
 
 import numpy as np
 from dotenv import load_dotenv
-from moviepy.editor import CompositeVideoClip, VideoFileClip
-import moviepy.video.fx.crop as crop_vid
+from moviepy import CompositeVideoClip, VideoFileClip
 from scipy.ndimage import gaussian_filter
 from scenedetect import SceneManager, open_video
 from scenedetect.detectors import ContentDetector
@@ -209,12 +208,7 @@ def compute_video_action_profile(
 
     prev_gray: np.ndarray | None = None
 
-    # Sequential frame reading is much cheaper than random access get_frame(t)
-    # Compatibility with different MoviePy versions: 'progress_bar' arg may not exist.
-    try:
-        frame_iter = clip.iter_frames(fps=eff_fps, dtype="uint8", progress_bar=False)
-    except TypeError:
-        frame_iter = clip.iter_frames(fps=eff_fps, dtype="uint8")
+    frame_iter = clip.iter_frames(fps=eff_fps, dtype="uint8", logger="bar")
 
     for idx, frame in enumerate(frame_iter):
         t = idx / eff_fps
@@ -455,8 +449,7 @@ def crop_clip(
 
     if current_ratio > target_ratio:
         new_width = round(height * ratio_w / ratio_h)
-        return crop_vid.crop(
-            clip,
+        return clip.cropped(
             width=new_width,
             height=height,
             x_center=width * x_center,
@@ -464,8 +457,7 @@ def crop_clip(
         )
 
     new_height = round(width / ratio_w * ratio_h)
-    return crop_vid.crop(
-        clip,
+    return clip.cropped(
         width=width,
         height=new_height,
         x_center=width * x_center,
@@ -542,7 +534,7 @@ def get_final_clip(
 ) -> VideoFileClip:
     """Prepare a clip ready for rendering."""
 
-    result_clip = clip.subclip(start_point, start_point + final_clip_length)
+    result_clip = clip.subclipped(start_point, start_point + final_clip_length)
 
     width, height = result_clip.size
     target_ratio = config.target_ratio_w / config.target_ratio_h
@@ -557,22 +549,22 @@ def get_final_clip(
 
     width, height = result_clip.size
     bg_w, bg_h = select_background_resolution(width)
-    result_clip = result_clip.resize(width=bg_w)
+    result_clip = result_clip.resized(width=bg_w)
 
     if width >= height:
-        background_clip = clip.subclip(start_point, start_point + final_clip_length)
+        background_clip = clip.subclipped(start_point, start_point + final_clip_length)
         background_clip = crop_clip(background_clip, 1, 1, config.x_center, config.y_center)
-        background_clip = background_clip.resize(width=720, height=720)
-        background_clip = background_clip.fl_image(blur)
-        background_clip = background_clip.resize(width=bg_w, height=bg_w)
-        result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
+        background_clip = background_clip.resized(width=720, height=720)
+        background_clip = background_clip.image_transform(blur)
+        background_clip = background_clip.resized(width=bg_w, height=bg_w)
+        result_clip = CompositeVideoClip([background_clip, result_clip.with_position("center")])
     elif width / 9 < height / 16:
-        background_clip = clip.subclip(start_point, start_point + final_clip_length)
+        background_clip = clip.subclipped(start_point, start_point + final_clip_length)
         background_clip = crop_clip(background_clip, 9, 16, config.x_center, config.y_center)
-        background_clip = background_clip.resize(width=720, height=1280)
-        background_clip = background_clip.fl_image(blur)
-        background_clip = background_clip.resize(width=bg_w, height=bg_h)
-        result_clip = CompositeVideoClip([background_clip, result_clip.set_position("center")])
+        background_clip = background_clip.resized(width=720, height=1280)
+        background_clip = background_clip.image_transform(blur)
+        background_clip = background_clip.resized(width=bg_w, height=bg_h)
+        result_clip = CompositeVideoClip([background_clip, result_clip.with_position("center")])
 
     return result_clip
 

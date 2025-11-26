@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from moviepy.editor import ColorClip
+from moviepy import ColorClip
 
 # Ensure the project root is on the import path.
 import sys
@@ -263,7 +263,7 @@ def test_compute_video_action_profile_stubbed_basic(monkeypatch):
         def __init__(self, *_args, **_kwargs):
             self.duration = 4.0
             self.fps = 30  # source fps
-        def iter_frames(self, fps=2.0, dtype="uint8", progress_bar=False):
+        def iter_frames(self, fps=2.0, dtype="uint8", logger=None):
             # Yield exactly int(duration*fps) frames
             n = int(self.duration * fps)
             for i in range(n):

@@ -1,12 +1,11 @@
 gtts==2.5.3
-moviepy==1.0.3
+librosa==0.11.0
+moviepy==2.2.1
+numpy==1.26.4
 opencv-python==4.10.0.84
+pytest==8.4.2
 python-dotenv==1.0.1
 random2==1.0.1
 scenedetect==0.6.2
 scipy==1.11.4
-numpy>=1.21
-pytest>=7.0
-
-librosa
-soundfile
+soundfile==0.13.1
