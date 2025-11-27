@@ -19,7 +19,7 @@ overall intensity, crops to the desired aspect ratio, and renders ready‑to‑u
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - FFmpeg (required by `moviepy`)
 - See `requirements.txt` for Python dependencies (includes `librosa`, `soundfile`, `moviepy`, `scenedetect`, `scipy`)
 
