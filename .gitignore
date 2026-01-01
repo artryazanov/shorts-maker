@@ -5,3 +5,4 @@ generated/
 venv/
 .env
 *.mp4
+__pycache__

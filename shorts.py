@@ -898,7 +898,7 @@ def config_from_env() -> ProcessingConfig:
 def main() -> None:
     """Entry point for command-line execution."""
 
-    args = parse_args()
+    _ = parse_args()
     config = config_from_env()
     output_dir = Path("generated")
     output_dir.mkdir(exist_ok=True)

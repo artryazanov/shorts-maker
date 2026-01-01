@@ -21,8 +21,8 @@ detectors_stub.ContentDetector = object  # type: ignore
 sys.modules.setdefault("scenedetect", scenedetect_stub)
 sys.modules.setdefault("scenedetect.detectors", detectors_stub)
 
-import shorts
-from shorts import (
+import shorts  # noqa: E402
+from shorts import (  # noqa: E402
     blur,
     combine_scenes,
     crop_clip,
