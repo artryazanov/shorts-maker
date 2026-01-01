@@ -1,5 +1,10 @@
 # Shorts Maker
 
+![Tests](https://github.com/artryazanov/shorts-maker/actions/workflows/testing.yml/badge.svg)
+![Linting](https://github.com/artryazanov/shorts-maker/actions/workflows/linting.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![License](https://img.shields.io/badge/license-Unlicense-blue)
+
 Shorts Maker generates vertical video clips from longer gameplay footage. The
 script detects scenes, computes audio and video action profiles (sound intensity + visual motion) and combines them to rank scenes by
 overall intensity, crops to the desired aspect ratio, and renders ready‑to‑upload shorts.
