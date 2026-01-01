@@ -4,6 +4,9 @@ Shorts Maker generates vertical video clips from longer gameplay footage. The
 script detects scenes, computes audio and video action profiles (sound intensity + visual motion) and combines them to rank scenes by
 overall intensity, crops to the desired aspect ratio, and renders ready‑to‑upload shorts.
 
+> [!NOTE]
+> For a heavily optimized version using NVIDIA GPUs (CUDA), see [Shorts Maker (GPU Optimized)](https://github.com/artryazanov/shorts-maker-gpu).
+
 ## Features
 
 - Automatic scene detection using `scenedetect`
