@@ -45,7 +45,9 @@ def _get_env_int(name: str, default: int) -> int:
     try:
         return int(value)
     except Exception:
-        logging.warning("Env var %s=%r is not a valid int. Using default %s.", name, value, default)
+        logging.warning(
+            "Env var %s=%r is not a valid int. Using default %s.", name, value, default
+        )
         return default
 
 
@@ -58,7 +60,10 @@ def _get_env_float(name: str, default: float) -> float:
         return float(value)
     except Exception:
         logging.warning(
-            "Env var %s=%r is not a valid float. Using default %s.", name, value, default
+            "Env var %s=%r is not a valid float. Using default %s.",
+            name,
+            value,
+            default,
         )
         return default
 
@@ -84,7 +89,9 @@ class ProcessingConfig:
         return (self.min_short_length + self.max_short_length) / 2
 
 
-def detect_video_scenes(video_path: Path, threshold: float = 27.0) -> Sequence[Tuple] | List:
+def detect_video_scenes(
+    video_path: Path, threshold: float = 27.0
+) -> Sequence[Tuple] | List:
     """Detect scenes in the provided video file.
 
     Parameters
@@ -113,6 +120,7 @@ def blur(image: np.ndarray) -> np.ndarray:
 
 
 # --- Audio-based action scoring -------------------------------------------------
+
 
 def compute_audio_action_profile(
     video_path: Path,
@@ -169,7 +177,6 @@ def compute_audio_action_profile(
     )
 
     return times, score
-
 
 
 def compute_video_action_profile(
@@ -312,7 +319,11 @@ def _best_window_single(
     end_sec = float(scene[1].get_seconds())
 
     # Safety clamp
-    if not math.isfinite(start_sec) or not math.isfinite(end_sec) or end_sec <= start_sec:
+    if (
+        not math.isfinite(start_sec)
+        or not math.isfinite(end_sec)
+        or end_sec <= start_sec
+    ):
         return start_sec
 
     max_allowed_start = end_sec - float(window_length)
@@ -382,7 +393,11 @@ def best_action_window_start(
     start_sec = float(scene[0].get_seconds())
     end_sec = float(scene[1].get_seconds())
 
-    if not math.isfinite(start_sec) or not math.isfinite(end_sec) or end_sec <= start_sec:
+    if (
+        not math.isfinite(start_sec)
+        or not math.isfinite(end_sec)
+        or end_sec <= start_sec
+    ):
         return start_sec
 
     # Use audio samples inside the scene as the base grid
@@ -553,18 +568,26 @@ def get_final_clip(
 
     if width >= height:
         background_clip = clip.subclipped(start_point, start_point + final_clip_length)
-        background_clip = crop_clip(background_clip, 1, 1, config.x_center, config.y_center)
+        background_clip = crop_clip(
+            background_clip, 1, 1, config.x_center, config.y_center
+        )
         background_clip = background_clip.resized(width=720, height=720)
         background_clip = background_clip.image_transform(blur)
         background_clip = background_clip.resized(width=bg_w, height=bg_w)
-        result_clip = CompositeVideoClip([background_clip, result_clip.with_position("center")])
+        result_clip = CompositeVideoClip(
+            [background_clip, result_clip.with_position("center")]
+        )
     elif width / 9 < height / 16:
         background_clip = clip.subclipped(start_point, start_point + final_clip_length)
-        background_clip = crop_clip(background_clip, 9, 16, config.x_center, config.y_center)
+        background_clip = crop_clip(
+            background_clip, 9, 16, config.x_center, config.y_center
+        )
         background_clip = background_clip.resized(width=720, height=1280)
         background_clip = background_clip.image_transform(blur)
         background_clip = background_clip.resized(width=bg_w, height=bg_h)
-        result_clip = CompositeVideoClip([background_clip, result_clip.with_position("center")])
+        result_clip = CompositeVideoClip(
+            [background_clip, result_clip.with_position("center")]
+        )
 
     return result_clip
 
@@ -584,7 +607,9 @@ def combine_scenes(scene_list: Sequence[Tuple], config: ProcessingConfig) -> Lis
         return []
 
     def is_small(scene) -> bool:
-        return (scene[1].get_seconds() - scene[0].get_seconds()) < config.min_short_length
+        return (
+            scene[1].get_seconds() - scene[0].get_seconds()
+        ) < config.min_short_length
 
     n = len(scene_list)
     out: List[List] = []
@@ -613,7 +638,7 @@ def combine_scenes(scene_list: Sequence[Tuple], config: ProcessingConfig) -> Lis
                     run_start_time = scene_list[i][0]
                     run_end_time = scene_list[i][1]
                 elif run_duration == config.max_combined_scene_length:
-                    is_last_scene = (i == n - 1)
+                    is_last_scene = i == n - 1
                     if is_last_scene:
                         # At the very end, close at previous boundary so the final tiny tail
                         # (current scene) remains a boundary run which can be dropped by threshold.
@@ -635,7 +660,9 @@ def combine_scenes(scene_list: Sequence[Tuple], config: ProcessingConfig) -> Lis
             run_end_idx = i - 1
             run_duration = run_end_time.get_seconds() - run_start_time.get_seconds()
             is_boundary = (run_start_idx == 0) or (run_end_idx == n - 1)
-            threshold = config.middle_short_length if is_boundary else config.min_short_length
+            threshold = (
+                config.middle_short_length if is_boundary else config.min_short_length
+            )
 
             if run_duration >= threshold:
                 out.append([run_start_time, run_end_time])
@@ -689,7 +716,9 @@ class _SecondsTime:
         return int(self._seconds * 30)
 
 
-def split_overlong_scenes(combined_scene_list: List[List], config: ProcessingConfig) -> List[List]:
+def split_overlong_scenes(
+    combined_scene_list: List[List], config: ProcessingConfig
+) -> List[List]:
     """Split scenes longer than 4 * max_short_length into n equal parts.
 
     For each scene with duration D > 4 * max_short_length, compute
@@ -735,8 +764,8 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     logging.info("Computing video action profile...")
     video_times, video_score = compute_video_action_profile(
         video_file,
-        fps=4,                # lower analysis fps for speed (3–6 is a good range)
-        downscale_factor=6,   # strong spatial downscale (4–8) for faster motion estimation
+        fps=4,  # lower analysis fps for speed (3–6 is a good range)
+        downscale_factor=6,  # strong spatial downscale (4–8) for faster motion estimation
     )
 
     processed_scene_list = combine_scenes(scene_list, config)
@@ -745,7 +774,9 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     logging.info("Scenes list with action scores:")
     for i, scene in enumerate(processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
-        score_val = scene_action_score(scene, audio_times, audio_score, video_times, video_score)
+        score_val = scene_action_score(
+            scene, audio_times, audio_score, video_times, video_score
+        )
         logging.info(
             "    Scene %2d: Duration %5.1f s, ActionScore %7.3f,"
             " Start %s / Frame %d, End %s / Frame %d",
@@ -761,14 +792,18 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
     # Sort by action score, not by length
     sorted_processed_scene_list = sorted(
         processed_scene_list,
-        key=lambda s: scene_action_score(s, audio_times, audio_score, video_times, video_score),
+        key=lambda s: scene_action_score(
+            s, audio_times, audio_score, video_times, video_score
+        ),
         reverse=True,
     )
 
     logging.info("Sorted scenes list (by action score):")
     for i, scene in enumerate(sorted_processed_scene_list, start=1):
         duration = scene[1].get_seconds() - scene[0].get_seconds()
-        score_val = scene_action_score(scene, audio_times, audio_score, video_times, video_score)
+        score_val = scene_action_score(
+            scene, audio_times, audio_score, video_times, video_score
+        )
         logging.info(
             "    Scene %2d: ActionScore %7.3f, Duration %5.1f s,"
             " Start %s / Frame %d, End %s / Frame %d",
@@ -835,16 +870,16 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
                 max_error_depth=config.max_error_depth,
             )
     else:
-        short_length = random.randint(
-            config.min_short_length, config.max_short_length
-        )
+        short_length = random.randint(config.min_short_length, config.max_short_length)
 
         if video_clip.duration < config.max_short_length:
             adapted_short_length = min(math.floor(video_clip.duration), short_length)
         else:
             adapted_short_length = short_length
 
-        min_start_point = min(10, math.floor(video_clip.duration) - adapted_short_length)
+        min_start_point = min(
+            10, math.floor(video_clip.duration) - adapted_short_length
+        )
         max_start_point = math.floor(video_clip.duration - adapted_short_length)
         final_clip = get_final_clip(
             video_clip,
@@ -863,7 +898,9 @@ def process_video(video_file: Path, config: ProcessingConfig, output_dir: Path) 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the shorts generator."""
 
-    parser = argparse.ArgumentParser(description="Generate short clips from gameplay footage.")
+    parser = argparse.ArgumentParser(
+        description="Generate short clips from gameplay footage."
+    )
     return parser.parse_args()
 
 
@@ -911,4 +948,3 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     main()
-
